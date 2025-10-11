@@ -444,10 +444,6 @@ defmodule GitFoil.Commands.Init do
     end
   end
 
-  defp run_step_with_spinner(label, work_fn) do
-    Terminal.with_spinner(label, work_fn)
-  end
-
   defp do_generate_keypair(min_duration) do
     start_time = System.monotonic_time(:millisecond)
 
@@ -493,34 +489,6 @@ defmodule GitFoil.Commands.Init do
     case Enum.find(results, &match?({:error, _}, &1)) do
       nil -> :ok
       error -> error
-    end
-  end
-
-  # ============================================================================
-  # Keypair Generation
-  # ============================================================================
-
-  defp generate_and_save_keypair do
-    result = Terminal.with_spinner(
-      "   Generating quantum-resistant encryption keys",
-      fn ->
-        with {:ok, keypair} <- FileKeyStorage.generate_keypair(),
-             :ok <- FileKeyStorage.store_keypair(keypair) do
-          {:ok, keypair}
-        else
-          {:error, reason} ->
-            {:error, "Failed to generate keypair: #{UIPrompts.format_error(reason)}"}
-        end
-      end,
-      min_duration: 10_000
-    )
-
-    case result do
-      {:ok, _} = success ->
-        IO.puts("✅  Generated quantum-resistant encryption keys")
-        success
-      error ->
-        error
     end
   end
 

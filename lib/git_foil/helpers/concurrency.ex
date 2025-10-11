@@ -82,9 +82,11 @@ defmodule GitFoil.Helpers.Concurrency do
   """
   @spec prompt(t(), (String.t() -> String.t()), keyword()) ::
           {t(), nil | {:invalid, String.t()} | {:clamped, integer()} | :default}
+  def prompt(config, prompt_fun, opts \\ [])
+
   def prompt(%__MODULE__{source: :cli} = config, _prompt_fun, _opts), do: {config, nil}
 
-  def prompt(%__MODULE__{} = config, prompt_fun, opts \\ []) do
+  def prompt(%__MODULE__{} = config, prompt_fun, opts) do
     label = Keyword.get(opts, :prompt_label, "Cores")
     default = config.selected
 

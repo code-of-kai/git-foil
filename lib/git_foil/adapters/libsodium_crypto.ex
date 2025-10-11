@@ -20,6 +20,9 @@ defmodule GitFoil.Adapters.LibsodiumCrypto do
   libsodium is audited and widely trusted (NaCl/libsodium lineage).
   """
 
+  # Suppress warnings for :enacl module (not available in OTP 28)
+  @compile {:no_warn_undefined, :enacl}
+
   # @behaviour GitFoil.Ports.CryptoProvider
 
   # @impl true

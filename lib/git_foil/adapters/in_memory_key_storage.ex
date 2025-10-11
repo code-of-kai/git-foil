@@ -46,7 +46,7 @@ defmodule GitFoil.Adapters.InMemoryKeyStorage do
   end
 
   @impl true
-  def save_keypair(keypair) do
+  def store_keypair(keypair) do
     Agent.update(__MODULE__, fn state ->
       %{state | keypair: keypair}
     end)
@@ -55,16 +55,32 @@ defmodule GitFoil.Adapters.InMemoryKeyStorage do
   end
 
   @impl true
-  def load_keypair do
+  def retrieve_keypair do
     case Agent.get(__MODULE__, fn state -> state.keypair end) do
-      nil -> {:error, :not_initialized}
+      nil -> {:error, :not_found}
       keypair -> {:ok, keypair}
     end
   end
 
   @impl true
+  def store_file_key(_path, _key) do
+    # Not implemented for in-memory storage
+    {:error, :not_implemented}
+  end
+
+  @impl true
+  def retrieve_file_key(_path) do
+    {:error, :not_found}
+  end
+
+  @impl true
+  def delete_file_key(_path) do
+    :ok
+  end
+
+  # Helper function (not a callback)
   def derive_master_key do
-    case load_keypair() do
+    case retrieve_keypair() do
       {:ok, keypair} ->
         # Deterministic derivation: SHA-512(classical_secret || pq_secret)
         # Take first 32 bytes for 256-bit key
@@ -78,7 +94,7 @@ defmodule GitFoil.Adapters.InMemoryKeyStorage do
     end
   end
 
-  @impl true
+  # Helper function (not a callback)
   def initialized? do
     case Agent.get(__MODULE__, fn state -> state.keypair end) do
       nil -> false

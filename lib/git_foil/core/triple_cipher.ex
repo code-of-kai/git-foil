@@ -18,7 +18,6 @@ defmodule GitFoil.Core.TripleCipher do
   """
 
   alias GitFoil.Core.Types.DerivedKeys
-  alias GitFoil.Ports.CryptoProvider
 
   @doc """
   Encrypts data through three layers.

@@ -25,7 +25,7 @@ defmodule GitFoil.Core.EncryptionEngine do
   Version byte allows for future algorithm changes.
   """
 
-  alias GitFoil.Core.{KeyDerivation, SixLayerCipher, Types}
+  alias GitFoil.Core.{KeyDerivation, SixLayerCipher}
   alias GitFoil.Core.Types.{EncryptionKey, EncryptedBlob}
 
   @version 3

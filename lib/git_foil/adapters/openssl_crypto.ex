@@ -107,7 +107,7 @@ defmodule GitFoil.Adapters.OpenSSLCrypto do
     {:error, :invalid_parameters}
   end
 
-  # Stub implementations for Ascon (not supported by OpenSSL)
+  # Stub implementations for algorithms not supported by OpenSSL
   @impl true
   def ascon_128a_encrypt(_key, _nonce, _plaintext, _aad) do
     {:error, :not_implemented}
@@ -115,6 +115,36 @@ defmodule GitFoil.Adapters.OpenSSLCrypto do
 
   @impl true
   def ascon_128a_decrypt(_key, _nonce, _ciphertext, _tag, _aad) do
+    {:error, :not_implemented}
+  end
+
+  @impl true
+  def aegis_256_encrypt(_key, _nonce, _plaintext, _aad) do
+    {:error, :not_implemented}
+  end
+
+  @impl true
+  def aegis_256_decrypt(_key, _nonce, _ciphertext, _tag, _aad) do
+    {:error, :not_implemented}
+  end
+
+  @impl true
+  def schwaemm256_256_encrypt(_key, _nonce, _plaintext, _aad) do
+    {:error, :not_implemented}
+  end
+
+  @impl true
+  def schwaemm256_256_decrypt(_key, _nonce, _ciphertext, _tag, _aad) do
+    {:error, :not_implemented}
+  end
+
+  @impl true
+  def deoxys_ii_256_encrypt(_key, _nonce, _plaintext, _aad) do
+    {:error, :not_implemented}
+  end
+
+  @impl true
+  def deoxys_ii_256_decrypt(_key, _nonce, _ciphertext, _tag, _aad) do
     {:error, :not_implemented}
   end
 end

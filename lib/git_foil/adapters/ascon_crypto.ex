@@ -84,4 +84,34 @@ defmodule GitFoil.Adapters.AsconCrypto do
   def chacha20_poly1305_decrypt(_key, _iv, _ciphertext, _tag, _aad) do
     {:error, :not_implemented}
   end
+
+  @impl true
+  def aegis_256_encrypt(_key, _nonce, _plaintext, _aad) do
+    {:error, :not_implemented}
+  end
+
+  @impl true
+  def aegis_256_decrypt(_key, _nonce, _ciphertext, _tag, _aad) do
+    {:error, :not_implemented}
+  end
+
+  @impl true
+  def schwaemm256_256_encrypt(_key, _nonce, _plaintext, _aad) do
+    {:error, :not_implemented}
+  end
+
+  @impl true
+  def schwaemm256_256_decrypt(_key, _nonce, _ciphertext, _tag, _aad) do
+    {:error, :not_implemented}
+  end
+
+  @impl true
+  def deoxys_ii_256_encrypt(_key, _nonce, _plaintext, _aad) do
+    {:error, :not_implemented}
+  end
+
+  @impl true
+  def deoxys_ii_256_decrypt(_key, _nonce, _ciphertext, _tag, _aad) do
+    {:error, :not_implemented}
+  end
 end
