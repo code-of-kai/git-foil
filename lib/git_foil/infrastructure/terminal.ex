@@ -24,29 +24,25 @@ defmodule GitFoil.Infrastructure.Terminal do
     min_duration = Keyword.get(opts, :min_duration, 0)
     start_time = System.monotonic_time(:millisecond)
 
-    # Start spinner in background
-    spinner_task = Task.async(fn ->
-      animate_spinner(label)
-    end)
+    if not spinner_supported?(opts) do
+      IO.puts("#{label}...")
+      result = await_work(work_fn, min_duration, start_time)
+      IO.puts("")
+      result
+    else
+      spinner_task =
+        Task.async(fn ->
+          animate_spinner(label)
+        end)
 
-    # Do the work
-    work_task = Task.async(work_fn)
-    result = Task.await(work_task, 15_000)
+      result = await_work(work_fn, min_duration, start_time)
 
-    # Ensure minimum duration if specified
-    if min_duration > 0 do
-      elapsed = System.monotonic_time(:millisecond) - start_time
-      if elapsed < min_duration do
-        Process.sleep(min_duration - elapsed)
-      end
+      send(spinner_task.pid, :stop)
+      Task.await(spinner_task)
+      IO.write("\r\e[K")
+
+      result
     end
-
-    # Stop spinner and clear line
-    send(spinner_task.pid, :stop)
-    Task.await(spinner_task)
-    IO.write("\r\e[K")
-
-    result
   end
 
   @doc """
@@ -65,7 +61,7 @@ defmodule GitFoil.Infrastructure.Terminal do
     after
       80 ->
         frame = Enum.at(frames, rem(index, length(frames)))
-        IO.write("\r#{frame}  #{label}")
+        IO.write("\r\e[K#{frame}  #{label}")
         animate_spinner_loop(label, frames, index + 1)
     end
   end
@@ -136,4 +132,41 @@ defmodule GitFoil.Infrastructure.Terminal do
   @spec pluralize(String.t(), non_neg_integer()) :: String.t()
   def pluralize(word, 1), do: word
   def pluralize(word, _count), do: word <> "s"
+
+  defp await_work(work_fn, min_duration, start_time) do
+    work_task = Task.async(work_fn)
+    result = Task.await(work_task, 15_000)
+    enforce_min_duration(min_duration, start_time)
+    result
+  end
+
+  defp spinner_supported?(opts) do
+    case Keyword.get(opts, :spinner) do
+      false -> false
+      _ -> spinner_supported_env?()
+    end
+  end
+
+  defp spinner_supported_env? do
+    no_spinner? =
+      System.get_env("GIT_FOIL_NO_SPINNER") in ["1", "true", "yes"] or
+        System.get_env("CI") in ["1", "true"]
+
+    cond do
+      no_spinner? -> false
+      not IO.ANSI.enabled?() -> false
+      match?({:error, _}, :io.columns(:stdio)) -> false
+      true -> true
+    end
+  end
+
+  defp enforce_min_duration(min_duration, start_time) when min_duration > 0 do
+    elapsed = System.monotonic_time(:millisecond) - start_time
+
+    if elapsed < min_duration do
+      Process.sleep(min_duration - elapsed)
+    end
+  end
+
+  defp enforce_min_duration(_min_duration, _start_time), do: :ok
 end

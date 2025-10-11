@@ -7,6 +7,9 @@ defmodule GitFoil.Helpers.UIPrompts do
   cohesive user experience.
   """
 
+  import Bitwise, only: [band: 2]
+  alias GitFoil.Infrastructure.Git
+
   @doc """
   Formats common file system and Elixir errors into user-friendly messages.
 
@@ -57,7 +60,7 @@ defmodule GitFoil.Helpers.UIPrompts do
 
     IO.puts("🔑  Existing encryption key found!")
     IO.puts("")
-    IO.puts("📍  Location: .git/git_foil/master.key")
+    IO.puts(master_key_prompt_line(opts))
     IO.puts("")
     IO.puts("Choose an option:")
     IO.puts("")
@@ -79,6 +82,55 @@ defmodule GitFoil.Helpers.UIPrompts do
       _ -> {:invalid, "Invalid choice. Please enter 1 or 2."}
     end
   end
+
+  def master_key_info(opts \\ []) do
+    repository = Keyword.get(opts, :repository, Git)
+
+    path =
+      case repository.repository_root() do
+        {:ok, root} ->
+          Path.join([root, ".git", "git_foil", "master.key"])
+
+        {:error, _} ->
+          Path.expand(".git/git_foil/master.key")
+      end
+
+    permissions =
+      case File.stat(path) do
+        {:ok, %File.Stat{mode: mode}} ->
+          mode
+          |> band(0o777)
+          |> Integer.to_string(8)
+          |> String.pad_leading(4, "0")
+
+        {:error, _} ->
+          nil
+      end
+
+    %{path: path, permissions: permissions}
+  end
+
+  def master_key_prompt_line(opts \\ []) do
+    info = master_key_info(opts)
+    "📍  Location: #{info.path}#{format_permissions_suffix(info.permissions)}"
+  end
+
+  def master_key_location_line(opts \\ []) do
+    info = master_key_info(opts)
+    "   Location: #{info.path}#{format_permissions_suffix(info.permissions)}"
+  end
+
+  def master_key_summary(opts \\ []) do
+    info = master_key_info(opts)
+    info.path <> format_permissions_suffix(info.permissions)
+  end
+
+  def master_key_path(opts \\ []) do
+    master_key_info(opts).path
+  end
+
+  defp format_permissions_suffix(nil), do: ""
+  defp format_permissions_suffix(perm), do: " (permissions: #{perm})"
 
   @doc """
   Formats a key backup confirmation message.

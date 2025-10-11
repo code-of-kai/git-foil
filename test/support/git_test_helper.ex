@@ -61,9 +61,11 @@ defmodule GitFoil.Test.GitTestHelper do
     # Create a script that pipes answers to git-foil init
     answers = "y\n1\ny\n"
 
+    git_foil_cmd = get_git_foil_command()
+
     {output, exit_code} = System.cmd(
       "sh",
-      ["-c", "echo '#{answers}' | git-foil init"],
+      ["-c", "echo '#{answers}' | #{git_foil_cmd} init"],
       cd: repo_path,
       stderr_to_stdout: true
     )
@@ -80,9 +82,11 @@ defmodule GitFoil.Test.GitTestHelper do
     # Answer yes to both confirmation prompts
     answers = "y\nyes\n"
 
+    git_foil_cmd = get_git_foil_command()
+
     {output, exit_code} = System.cmd(
       "sh",
-      ["-c", "echo '#{answers}' | git-foil unencrypt"],
+      ["-c", "echo '#{answers}' | #{git_foil_cmd} unencrypt"],
       cd: repo_path,
       stderr_to_stdout: true
     )
@@ -195,5 +199,24 @@ defmodule GitFoil.Test.GitTestHelper do
     |> Enum.each(fn file ->
       System.cmd("git", ["add", file], cd: repo_path)
     end)
+  end
+
+  @doc """
+  Gets the git-foil command to use for tests.
+
+  Prefers the local development build (git-foil-dev) if it exists,
+  otherwise falls back to the installed git-foil escript.
+  """
+  defp get_git_foil_command do
+    # Get project root (assumes we're in test/support/)
+    project_root = Path.expand("../..", __DIR__)
+    dev_escript = Path.join(project_root, "git-foil-dev")
+
+    if File.exists?(dev_escript) do
+      dev_escript
+    else
+      # Fall back to installed escript
+      "git-foil"
+    end
   end
 end

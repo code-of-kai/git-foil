@@ -7,6 +7,7 @@ defmodule GitFoil.Commands.Unencrypt do
   """
 
   alias GitFoil.Helpers.UIPrompts
+  alias GitFoil.Infrastructure.Terminal
 
   @doc """
   Unencrypt all files and remove GitFoil from the repository.
@@ -29,7 +30,8 @@ defmodule GitFoil.Commands.Unencrypt do
     with :ok <- verify_git_repository(),
          :ok <- verify_gitfoil_initialized(),
          :ok <- confirm_unencrypt(keep_key),
-         {:ok, files_to_decrypt} <- get_encrypted_files(),  # Get list BEFORE removing .gitattributes
+         # Get list BEFORE removing .gitattributes
+         {:ok, files_to_decrypt} <- get_encrypted_files(),
          :ok <- remove_gitattributes_patterns(),
          :ok <- disable_filters(),
          :ok <- decrypt_files(files_to_decrypt),
@@ -83,12 +85,17 @@ defmodule GitFoil.Commands.Unencrypt do
     UIPrompts.print_separator()
     IO.puts("")
 
-    answer = safe_gets("Do you want to continue and permanently remove encryption? [y/N]: ")
-             |> String.downcase()
+    answer =
+      safe_gets("Do you want to continue and permanently remove encryption? [y/N]: ")
+      |> String.downcase()
 
     case answer do
-      "y" -> confirm_destructive_action(keep_key)
-      "yes" -> confirm_destructive_action(keep_key)
+      "y" ->
+        confirm_destructive_action(keep_key)
+
+      "yes" ->
+        confirm_destructive_action(keep_key)
+
       _ ->
         IO.puts("")
         IO.puts("✅  Good choice! Your files are already decrypted in your working directory.")
@@ -119,11 +126,14 @@ defmodule GitFoil.Commands.Unencrypt do
     UIPrompts.print_separator()
     IO.puts("")
 
-    answer = safe_gets("Are you absolutely sure? Type 'yes' to proceed: ")
-             |> String.downcase()
+    answer =
+      safe_gets("Are you absolutely sure? Type 'yes' to proceed: ")
+      |> String.downcase()
 
     case answer do
-      "yes" -> :ok
+      "yes" ->
+        :ok
+
       _ ->
         IO.puts("")
         IO.puts("👋  Cancelled. No changes made.")
@@ -134,48 +144,46 @@ defmodule GitFoil.Commands.Unencrypt do
   defp get_encrypted_files do
     # Get list of files that have the gitfoil filter attribute
     # This must be called BEFORE removing .gitattributes
-    # Get both tracked and untracked files
+    # Only get tracked files - untracked files aren't in Git's index and don't need conversion
     tracked_result = System.cmd("git", ["ls-files"], stderr_to_stdout: true)
-    untracked_result = System.cmd("git", ["ls-files", "--others", "--exclude-standard"], stderr_to_stdout: true)
 
-    case {tracked_result, untracked_result} do
-      {{tracked_output, 0}, {untracked_output, 0}} ->
-        tracked_files = tracked_output
-                       |> String.split("\n", trim: true)
-                       |> Enum.reject(&(&1 == ""))
-
-        untracked_files = untracked_output
-                         |> String.split("\n", trim: true)
-                         |> Enum.reject(&(&1 == ""))
-
-        all_files = (tracked_files ++ untracked_files) |> Enum.uniq()
+    case tracked_result do
+      {tracked_output, 0} ->
+        tracked_files =
+          tracked_output
+          |> String.split("\n", trim: true)
+          |> Enum.reject(&(&1 == ""))
 
         # Filter to only files that have the gitfoil filter attribute
-        encrypted_files = Enum.filter(all_files, fn file ->
-          case System.cmd("git", ["check-attr", "filter", file], stderr_to_stdout: true) do
-            {attr_output, 0} ->
-              String.contains?(attr_output, "filter: gitfoil")
-            _ ->
-              false
-          end
-        end)
-        |> Enum.reject(&(&1 == ".gitattributes"))  # Exclude .gitattributes - it's metadata, not encrypted content
+        # and are actually in the Git index
+        encrypted_files =
+          Enum.filter(tracked_files, fn file ->
+            case System.cmd("git", ["check-attr", "filter", file], stderr_to_stdout: true) do
+              {attr_output, 0} ->
+                String.contains?(attr_output, "filter: gitfoil")
+
+              _ ->
+                false
+            end
+          end)
+          # Exclude .gitattributes - it's metadata, not encrypted content
+          |> Enum.reject(&(&1 == ".gitattributes"))
 
         {:ok, encrypted_files}
 
-      {{error, _}, _} ->
+      {error, _} ->
         {:error, "Failed to list tracked files: #{String.trim(error)}"}
-
-      {_, {error, _}} ->
-        {:error, "Failed to list untracked files: #{String.trim(error)}"}
     end
   end
 
   defp disable_filters do
     # Replace filter commands with cat (passthrough) instead of unsetting
     # This ensures git doesn't try to run the old gitfoil filter
-    with {_, 0} <- System.cmd("git", ["config", "filter.gitfoil.clean", "cat"], stderr_to_stdout: true),
-         {_, 0} <- System.cmd("git", ["config", "filter.gitfoil.smudge", "cat"], stderr_to_stdout: true) do
+    with {_, 0} <-
+           System.cmd("git", ["config", "filter.gitfoil.clean", "cat"], stderr_to_stdout: true),
+         {_, 0} <-
+           System.cmd("git", ["config", "filter.gitfoil.smudge", "cat"], stderr_to_stdout: true) do
+      GitFoil.Legacy.Cleanup.cleanup_git_filter()
       :ok
     else
       {error, _} -> {:error, "Failed to disable filters: #{String.trim(error)}"}
@@ -205,13 +213,17 @@ defmodule GitFoil.Commands.Unencrypt do
     files
     |> Enum.with_index(1)
     |> Enum.reduce_while(:ok, fn {file, index}, _acc ->
-      # Show progress (overwrite same line)
-      progress_bar = build_progress_bar(index, total)
-      IO.write("\r   #{progress_bar} #{index}/#{total} files")
+      # Show progress (overwrite same line using ANSI escape codes)
+      # \r moves cursor to start of line, \e[K clears from cursor to end of line
+      progress_bar = Terminal.progress_bar(index, total)
+      IO.write("\r\e[K   #{progress_bar} #{index}/#{total} files")
+      # Flush to ensure immediate display
+      :io.format(~c"")
 
       # Remove from index, then re-add with disabled filters
       # This forces git to store the plaintext working directory version
-      with {_, 0} <- System.cmd("git", ["rm", "--cached", file], stderr_to_stdout: true),
+      # Use -f to force removal even if there are staged/unstaged changes
+      with {_, 0} <- System.cmd("git", ["rm", "--cached", "-f", file], stderr_to_stdout: true),
            {_, 0} <- System.cmd("git", ["add", file], stderr_to_stdout: true) do
         {:cont, :ok}
       else
@@ -236,16 +248,21 @@ defmodule GitFoil.Commands.Unencrypt do
     if File.exists?(".gitattributes") do
       case File.read(".gitattributes") do
         {:ok, content} ->
-          # Remove GitFoil-related lines
-          new_content = content
-                        |> String.split("\n")
-                        |> Enum.reject(fn line ->
-                          String.contains?(line, "filter=gitfoil") or
-                          String.contains?(line, "GitFoil") or
-                          String.trim(line) == ".gitattributes -filter"
-                        end)
-                        |> Enum.join("\n")
-                        |> String.trim()
+          # Remove GitFoil-related lines and system file exclusions
+          new_content =
+            content
+            |> String.split("\n")
+            |> Enum.reject(fn line ->
+              String.contains?(line, "filter=gitfoil") or
+                String.contains?(line, "filter=gitveil") or
+                String.contains?(line, "GitFoil") or
+                String.trim(line) == ".gitattributes -filter" or
+                String.trim(line) == ".DS_Store -filter" or
+                String.trim(line) == "Thumbs.db -filter" or
+                String.trim(line) == "desktop.ini -filter"
+            end)
+            |> Enum.join("\n")
+            |> String.trim()
 
           # Write back or delete if empty
           if new_content == "" do
@@ -257,6 +274,7 @@ defmodule GitFoil.Commands.Unencrypt do
               :ok ->
                 IO.puts("   Updated .gitattributes\n")
                 :ok
+
               {:error, reason} ->
                 {:error, "Failed to update .gitattributes: #{UIPrompts.format_error(reason)}"}
             end
@@ -312,17 +330,6 @@ defmodule GitFoil.Commands.Unencrypt do
         :ok
       end
     end
-  end
-
-  defp build_progress_bar(current, total) do
-    percentage = current / total
-    filled = round(percentage * 20)
-    empty = 20 - filled
-
-    bar = String.duplicate("█", filled) <> String.duplicate("░", empty)
-    percent = :erlang.float_to_binary(percentage * 100, decimals: 0)
-
-    "#{bar} #{percent}%"
   end
 
   defp success_message(keep_key) do

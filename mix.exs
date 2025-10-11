@@ -31,8 +31,8 @@ defmodule GitFoil.MixProject do
           mode: rustc_mode(Mix.env())
         ]
       ],
-      # CLI escript configuration
-      escript: [main_module: GitFoil.CLI, name: "git-foil"],
+      # Escript for development testing
+      escript: [main_module: GitFoil.CLI, name: "git-foil-dev"],
       # Test coverage
       test_coverage: [tool: ExCoveralls],
       preferred_cli_env: [
@@ -44,22 +44,6 @@ defmodule GitFoil.MixProject do
       dialyzer: [
         plt_add_apps: [:mix],
         plt_file: {:no_warn, "priv/plts/dialyzer.plt"}
-      ],
-      # Mix Release configuration with Burrito
-      releases: [
-        git_foil: [
-          steps: [:assemble, &Burrito.wrap/1],
-          include_executables_for: [],
-          applications: [runtime_tools: :none],
-          burrito: [
-            targets: [
-              macos_arm64: [os: :darwin, cpu: :aarch64],
-              macos_x86_64: [os: :darwin, cpu: :x86_64],
-              linux_x86_64: [os: :linux, cpu: :x86_64],
-              linux_arm64: [os: :linux, cpu: :aarch64]
-            ]
-          ]
-        ]
       ]
     ]
   end
@@ -83,13 +67,6 @@ defmodule GitFoil.MixProject do
 
       # Rust NIF for Ascon-128a
       {:rustler, "~> 0.34.0"},
-
-      # Burrito - standalone executable builder
-      {:burrito, "~> 1.0"},
-
-      # Alternative crypto implementation (libsodium)
-      # DISABLED: enacl not compatible with OTP 28 yet
-      # {:enacl, "~> 1.2"},
 
       # Code quality and static analysis
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

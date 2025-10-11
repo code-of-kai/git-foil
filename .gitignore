@@ -31,8 +31,11 @@ temp/
 git-veil
 burrito_out/
 
-# Escript build artifacts
-/git-foil
+# Escript build artifacts (removed)
+# /git-foil
+
+# Development wrapper (created by scripts/mix-run.sh)
+/bin/
 
 # Test files
 test_secret.env

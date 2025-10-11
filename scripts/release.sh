@@ -140,8 +140,8 @@ if [ ! -f "$FORMULA_PATH" ]; then
     error "Formula not found at ${FORMULA_PATH}"
 fi
 
-# Get current version from formula
-CURRENT_VERSION=$(grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+' "$FORMULA_PATH" | head -1)
+# Get current version from formula (macOS-compatible)
+CURRENT_VERSION=$(grep -o 'v[0-9]*\.[0-9]*\.[0-9]*' "$FORMULA_PATH" | head -1 | sed 's/^v//')
 info "Current formula version: ${CURRENT_VERSION}"
 info "New version: ${VERSION}"
 

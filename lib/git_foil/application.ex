@@ -5,19 +5,13 @@ defmodule GitFoil.Application do
 
   @impl true
   def start(_type, _args) do
-    # Only run CLI if we're not in test or dev environment
-    # This allows mix test and other mix commands to work normally
-    case Mix.env() do
-      env when env in [:test, :dev] ->
-        # In test/dev, just start a minimal supervisor
-        children = []
-        opts = [strategy: :one_for_one, name: GitFoil.Supervisor]
-        Supervisor.start_link(children, opts)
+    _ = GitFoil.Legacy.Cleanup.run()
+    _ = GitFoil.Native.PqcleanLoader.ensure_loaded()
 
-      _prod ->
-        # In production (Homebrew installation), run CLI and exit
-        GitFoil.CLI.main(System.argv())
-        System.halt(0)
-    end
+    # Start a minimal supervisor (required for OTP application)
+    # The actual CLI is invoked directly via mix run in the Homebrew wrapper
+    children = []
+    opts = [strategy: :one_for_one, name: GitFoil.Supervisor]
+    Supervisor.start_link(children, opts)
   end
 end

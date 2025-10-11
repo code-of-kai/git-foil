@@ -36,7 +36,7 @@ defmodule GitFoil.Commands.Init do
     terminal = Keyword.get(opts, :terminal, Terminal)
 
     # Store in opts for passing to helper functions
-    opts = Keyword.merge(opts, [repository: repository, terminal: terminal])
+    opts = Keyword.merge(opts, repository: repository, terminal: terminal)
 
     with :ok <- verify_git_repository(opts),
          :ok <- check_already_fully_initialized(force, opts),
@@ -176,10 +176,18 @@ defmodule GitFoil.Commands.Init do
   defp build_gitattributes_content(patterns) do
     header = "# GitFoil - Quantum-resistant Git encryption\n"
     pattern_lines = Enum.join(patterns, "\n")
-    # .gitattributes must not be encrypted (Git needs to read it)
-    # This MUST come after ** pattern (Git applies last matching pattern)
-    exclusion = "\n.gitattributes -filter\n"
-    header <> pattern_lines <> exclusion
+    # Exclusions must not be encrypted
+    # .gitattributes - Git needs to read it
+    # System files - should be in .gitignore, not encrypted
+    # These MUST come after ** pattern (Git applies last matching pattern)
+    exclusions = """
+
+.gitattributes -filter
+.DS_Store -filter
+Thumbs.db -filter
+desktop.ini -filter
+"""
+    header <> pattern_lines <> exclusions
   end
 
   defp write_and_commit_gitattributes(content) do
@@ -249,11 +257,12 @@ defmodule GitFoil.Commands.Init do
     case {has_key?, has_patterns?} do
       {true, true} ->
         pattern_text = if pattern_count == 1, do: "1 pattern", else: "#{pattern_count} patterns"
+        key_summary = UIPrompts.master_key_summary()
 
         message = """
         ✅  GitFoil is already initialized in this repository.
 
-           🔑  Encryption key: .git/git_foil/master.key
+           🔑  Encryption key: #{key_summary}
            📝  Patterns: #{pattern_text} configured in .gitattributes
 
         💡  Need to make changes?
@@ -280,9 +289,12 @@ defmodule GitFoil.Commands.Init do
     case File.read(".gitattributes") do
       {:ok, content} ->
         has_patterns? = String.contains?(content, "filter=gitfoil")
-        pattern_count = content
-                       |> String.split("\n")
-                       |> Enum.count(&String.contains?(&1, "filter=gitfoil"))
+
+        pattern_count =
+          content
+          |> String.split("\n")
+          |> Enum.count(&String.contains?(&1, "filter=gitfoil"))
+
         {has_patterns?, pattern_count}
 
       {:error, _} ->
@@ -319,9 +331,10 @@ defmodule GitFoil.Commands.Init do
             {:ok, :generate_new}
 
           {:error, reason} ->
-            {:error, UIPrompts.format_error_message(
-              "Failed to backup existing key: #{UIPrompts.format_error(reason)}"
-            )}
+            {:error,
+             UIPrompts.format_error_message(
+               "Failed to backup existing key: #{UIPrompts.format_error(reason)}"
+             )}
         end
 
       {:invalid, message} ->
@@ -331,10 +344,11 @@ defmodule GitFoil.Commands.Init do
   end
 
   defp backup_existing_key do
-    timestamp = DateTime.utc_now()
-                |> DateTime.to_iso8601()
-                |> String.replace(":", "-")
-                |> String.replace(".", "-")
+    timestamp =
+      DateTime.utc_now()
+      |> DateTime.to_iso8601()
+      |> String.replace(":", "-")
+      |> String.replace(".", "-")
 
     backup_filename = "master.key.backup.#{timestamp}"
     backup_path = ".git/git_foil/#{backup_filename}"
@@ -418,45 +432,52 @@ defmodule GitFoil.Commands.Init do
     repository = Keyword.get(opts, :repository, Git)
 
     # First step: Generate keypair
-    keypair_result = terminal.with_spinner(
-      "Generating quantum-resistant encryption keys",
-      fn -> do_generate_keypair(3000) end
-    )
+    keypair_result =
+      terminal.with_spinner(
+        "Generating quantum-resistant encryption keys",
+        fn -> do_generate_keypair(3000) end
+      )
 
     case keypair_result do
       {:ok, _} ->
         IO.puts("✅  Generated quantum-resistant encryption keys")
 
         # Second step: Configure filters
-        filter_result = terminal.with_spinner(
-          "Configuring Git filters for automatic encryption/decryption",
-          fn -> do_configure_filters(3000, repository) end
-        )
+        filter_result =
+          terminal.with_spinner(
+            "Configuring Git filters for automatic encryption/decryption",
+            fn -> do_configure_filters(3000, repository) end
+          )
 
         case filter_result do
           :ok ->
             IO.puts("✅  Configured Git filters for automatic encryption/decryption")
             :ok
-          error -> error
+
+          error ->
+            error
         end
 
-      {:error, _} = error -> error
+      {:error, _} = error ->
+        error
     end
   end
 
   defp do_generate_keypair(min_duration) do
     start_time = System.monotonic_time(:millisecond)
 
-    result = with {:ok, keypair} <- FileKeyStorage.generate_keypair(),
-                  :ok <- FileKeyStorage.store_keypair(keypair) do
-      {:ok, keypair}
-    else
-      {:error, reason} ->
-        {:error, "Failed to generate keypair: #{UIPrompts.format_error(reason)}"}
-    end
+    result =
+      with {:ok, keypair} <- FileKeyStorage.generate_keypair(),
+           :ok <- FileKeyStorage.store_keypair(keypair) do
+        {:ok, keypair}
+      else
+        {:error, reason} ->
+          {:error, "Failed to generate keypair: #{UIPrompts.format_error(reason)}"}
+      end
 
     # Ensure minimum duration
     elapsed = System.monotonic_time(:millisecond) - start_time
+
     if elapsed < min_duration do
       Process.sleep(min_duration - elapsed)
     end
@@ -482,6 +503,7 @@ defmodule GitFoil.Commands.Init do
 
     # Ensure minimum duration
     elapsed = System.monotonic_time(:millisecond) - start_time
+
     if elapsed < min_duration do
       Process.sleep(min_duration - elapsed)
     end
@@ -500,35 +522,37 @@ defmodule GitFoil.Commands.Init do
     terminal = Keyword.get(opts, :terminal, Terminal)
     repository = Keyword.get(opts, :repository, Git)
 
-    result = terminal.with_spinner(
-      "   Configuring Git filters for automatic encryption/decryption",
-      fn ->
-        # Determine the correct path to git-foil executable
-        executable_path = get_executable_path()
+    result =
+      terminal.with_spinner(
+        "   Configuring Git filters for automatic encryption/decryption",
+        fn ->
+          # Determine the correct path to git-foil executable
+          executable_path = get_executable_path()
 
-        filters = [
-          {"filter.gitfoil.clean", "#{executable_path} clean %f"},
-          {"filter.gitfoil.smudge", "#{executable_path} smudge %f"},
-          {"filter.gitfoil.required", "true"}
-        ]
+          filters = [
+            {"filter.gitfoil.clean", "#{executable_path} clean %f"},
+            {"filter.gitfoil.smudge", "#{executable_path} smudge %f"},
+            {"filter.gitfoil.required", "true"}
+          ]
 
-        results =
-          Enum.map(filters, fn {key, value} ->
-            repository.set_config(key, value)
-          end)
+          results =
+            Enum.map(filters, fn {key, value} ->
+              repository.set_config(key, value)
+            end)
 
-        case Enum.find(results, &match?({:error, _}, &1)) do
-          nil -> :ok
-          error -> error
-        end
-      end,
-      min_duration: 10_000
-    )
+          case Enum.find(results, &match?({:error, _}, &1)) do
+            nil -> :ok
+            error -> error
+          end
+        end,
+        min_duration: 10_000
+      )
 
     case result do
       :ok ->
         IO.puts("✅  Configured Git filters for automatic encryption/decryption")
         :ok
+
       error ->
         error
     end
@@ -548,7 +572,8 @@ defmodule GitFoil.Commands.Init do
       :error ->
         # Fallback: try to find git-foil in PATH
         case System.find_executable("git-foil") do
-          nil -> "git-foil"  # Last resort: assume it's in PATH
+          # Last resort: assume it's in PATH
+          nil -> "git-foil"
           path -> path
         end
     end
@@ -561,17 +586,81 @@ defmodule GitFoil.Commands.Init do
   defp maybe_encrypt_files(:skipped, _opts), do: {:ok, false}
 
   defp maybe_encrypt_files(_pattern_status, opts) do
+    # Check for system files and warn if found
+    warn_about_system_files(opts)
+
     # Count only files matching the configured encryption patterns
     case count_files_matching_patterns(opts) do
       {:ok, 0} ->
+        IO.puts("")
+        IO.puts("📝  No existing files found in repository.")
+        IO.puts("    Files will be encrypted as you add them with git add/commit.")
+        IO.puts("")
         {:ok, false}
 
       {:ok, count} ->
         offer_encryption(count, opts)
 
-      {:error, _} ->
+      {:error, reason} ->
+        IO.puts("")
+        IO.puts("⚠️   Warning: Could not check for files to encrypt.")
+        IO.puts("    Reason: #{inspect(reason)}")
+        IO.puts("    Files will be encrypted as you add them with git add/commit.")
+        IO.puts("")
         {:ok, false}
     end
+  end
+
+  defp warn_about_system_files(opts) do
+    case get_all_repository_files(opts) do
+      {:ok, all_files} ->
+        system_files = detect_system_files(all_files)
+
+        if length(system_files) > 0 do
+          IO.puts("")
+          IO.puts("⚠️  WARNING: Found system files in your repository!")
+          IO.puts("")
+
+          Enum.each(system_files, fn file ->
+            IO.puts("   • #{file}")
+          end)
+
+          IO.puts("")
+          IO.puts("   These files are being EXCLUDED from encryption.")
+          IO.puts("")
+          IO.puts("   💡 Recommended actions:")
+          IO.puts("      1. Add these patterns to .gitignore:")
+
+          system_patterns = get_system_file_patterns(system_files)
+
+          Enum.each(system_patterns, fn pattern ->
+            IO.puts("         #{pattern}")
+          end)
+
+          IO.puts("      2. Remove them from Git: git rm --cached <filename>")
+          IO.puts("      3. Commit the changes")
+          IO.puts("")
+        end
+
+      {:error, _} ->
+        # Silently ignore if we can't check for system files
+        :ok
+    end
+  end
+
+  defp detect_system_files(all_files) do
+    system_file_names = [".DS_Store", "Thumbs.db", "desktop.ini", ".Spotlight-V100", ".Trashes"]
+
+    Enum.filter(all_files, fn file ->
+      basename = Path.basename(file)
+      basename in system_file_names
+    end)
+  end
+
+  defp get_system_file_patterns(system_files) do
+    system_files
+    |> Enum.map(&Path.basename/1)
+    |> Enum.uniq()
   end
 
   defp count_files_matching_patterns(opts) do
@@ -593,22 +682,30 @@ defmodule GitFoil.Commands.Init do
     IO.puts("")
     IO.puts("💡  Encrypt existing files now?")
     IO.puts("")
-    IO.puts("   Found #{terminal.format_number(count)} #{terminal.pluralize("file", count)} matching your patterns.")
+
+    IO.puts(
+      "   Found #{terminal.format_number(count)} #{terminal.pluralize("file", count)} matching your patterns."
+    )
+
     IO.puts("")
     IO.puts("   [Y] Yes - Encrypt files now (recommended)")
     IO.puts("       → Shows progress as files are encrypted")
     IO.puts("       → Files ready to commit immediately")
+
     if many_files do
       IO.puts("       → Note: Encryption will take longer with many files")
     end
+
     IO.puts("")
     IO.puts("   [n] No - I'll encrypt them later")
     IO.puts("       → Use git-foil encrypt (shows progress, all at once)")
     IO.puts("       → Or just use git normally: git add / git commit")
     IO.puts("       → Either way, files encrypt automatically")
+
     if many_files do
       IO.puts("       → Note: git add/commit will take longer with many files")
     end
+
     IO.puts("")
     UIPrompts.print_separator()
 
@@ -629,7 +726,6 @@ defmodule GitFoil.Commands.Init do
     # Get only files that match the configured encryption patterns
     with {:ok, all_files} <- get_all_repository_files(opts),
          {:ok, matching_files} <- get_files_matching_patterns(all_files, opts) do
-
       actual_count = length(matching_files)
 
       if actual_count == 0 do
@@ -638,7 +734,10 @@ defmodule GitFoil.Commands.Init do
         IO.puts("")
         {:ok, false}
       else
-        IO.puts("🔒  Encrypting #{terminal.format_number(actual_count)} #{terminal.pluralize("file", actual_count)} matching your patterns...")
+        IO.puts(
+          "🔒  Encrypting #{terminal.format_number(actual_count)} #{terminal.pluralize("file", actual_count)} matching your patterns..."
+        )
+
         IO.puts("")
 
         with :ok <- add_files_with_progress(matching_files, actual_count, opts) do
@@ -655,21 +754,28 @@ defmodule GitFoil.Commands.Init do
     case repository.check_attr_batch("filter", all_files) do
       {:ok, results} ->
         # Use comprehension for single-pass filter+map (more idiomatic)
-        matching_files = for {file, attr} <- results,
-                             String.contains?(attr, "filter: gitfoil"),
-                             do: file
+        # Note: check_attr_batch returns {file, value} where value is just "gitfoil" not "filter: gitfoil"
+        matching_files =
+          for {file, attr} <- results,
+              attr == "gitfoil",
+              do: file
+
         {:ok, matching_files}
 
       {:error, _reason} ->
         # Fallback to individual checks if batch fails
-        matching_files = Enum.filter(all_files, fn file ->
-          case repository.check_attr("filter", file) do
-            {:ok, attr_output} ->
-              String.contains?(attr_output, "filter: gitfoil")
-            _ ->
-              false
-          end
-        end)
+        # Note: check_attr returns full output like "file.txt: filter: gitfoil"
+        matching_files =
+          Enum.filter(all_files, fn file ->
+            case repository.check_attr("filter", file) do
+              {:ok, attr_output} ->
+                String.contains?(attr_output, "filter: gitfoil")
+
+              _ ->
+                false
+            end
+          end)
+
         {:ok, matching_files}
     end
   end
@@ -681,12 +787,18 @@ defmodule GitFoil.Commands.Init do
     files
     |> Enum.with_index(1)
     |> Enum.reduce_while(:ok, fn {file, index}, _acc ->
+      # Show progress (overwrite same line using ANSI escape codes)
+      # \r moves cursor to start of line, \e[K clears from cursor to end of line
       progress_bar = terminal.progress_bar(index, total)
-      IO.write("\r   #{progress_bar} #{index}/#{total} files")
+      IO.write("\r\e[K   #{progress_bar} #{index}/#{total} files")
+      # Flush to ensure immediate display
+      :io.format(~c"")
 
       # Add the file (triggers clean filter for encryption)
       case repository.add_file(file) do
-        :ok -> {:cont, :ok}
+        :ok ->
+          {:cont, :ok}
+
         {:error, reason} ->
           IO.write("\n")
           {:halt, {:error, "Failed to encrypt #{file}: #{reason}"}}
@@ -696,6 +808,7 @@ defmodule GitFoil.Commands.Init do
       :ok ->
         IO.write("\n\n")
         :ok
+
       error ->
         error
     end
@@ -707,15 +820,8 @@ defmodule GitFoil.Commands.Init do
 
   defp success_message(pattern_status, encrypted, opts) do
     repository = Keyword.get(opts, :repository, Git)
-
-    # Get absolute path to master.key for easy copying
-    key_path = case repository.repository_root() do
-      {:ok, repo_root} ->
-        Path.join([repo_root, ".git", "git_foil", "master.key"])
-      _ ->
-        # Fallback to relative path if git command fails
-        Path.expand(".git/git_foil/master.key")
-    end
+    key_info = UIPrompts.master_key_info(repository: repository)
+    location_line = UIPrompts.master_key_location_line(repository: repository)
 
     base_config = """
     ✅  GitFoil setup complete!
@@ -727,7 +833,7 @@ defmodule GitFoil.Commands.Init do
        Files will decrypt when you git checkout or git pull.
 
     🔑  Your encryption key:
-       Location: .git/git_foil/master.key (permissions: 0600)
+    #{location_line}
     """
 
     pattern_message = get_pattern_message(pattern_status, encrypted)
@@ -739,7 +845,7 @@ defmodule GitFoil.Commands.Init do
        Store it securely in a password manager or encrypted backup.
 
        Your key can be found here:
-       #{key_path}
+       #{key_info.path}
     """
 
     base_config <> pattern_message <> warning

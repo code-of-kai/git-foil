@@ -400,7 +400,7 @@ defmodule GitFoil.Commands.InitDecisionForksTest do
       MockGit.configure(
         list_all_files: fn -> {:ok, ["test.env", "secret.key"]} end,
         check_attr_batch: fn _attr, _files ->
-          {:ok, [{"test.env", "filter: gitfoil"}, {"secret.key", "filter: gitfoil"}]}
+          {:ok, [{"test.env", "gitfoil"}, {"secret.key", "gitfoil"}]}
         end,
         add_file: fn _file -> :ok end
       )
@@ -420,7 +420,7 @@ defmodule GitFoil.Commands.InitDecisionForksTest do
       MockGit.configure(
         list_all_files: fn -> {:ok, ["test.env"]} end,
         check_attr_batch: fn _attr, _files ->
-          {:ok, [{"test.env", "filter: gitfoil"}]}
+          {:ok, [{"test.env", "gitfoil"}]}
         end,
         add_file: fn _file -> :ok end
       )
@@ -440,7 +440,7 @@ defmodule GitFoil.Commands.InitDecisionForksTest do
       MockGit.configure(
         list_all_files: fn -> {:ok, ["test.env"]} end,
         check_attr_batch: fn _attr, _files ->
-          {:ok, [{"test.env", "filter: gitfoil"}]}
+          {:ok, [{"test.env", "gitfoil"}]}
         end
       )
 
@@ -458,7 +458,7 @@ defmodule GitFoil.Commands.InitDecisionForksTest do
       MockGit.configure(
         list_all_files: fn -> {:ok, ["test.env"]} end,
         check_attr_batch: fn _attr, _files ->
-          {:ok, [{"test.env", "filter: gitfoil"}]}
+          {:ok, [{"test.env", "gitfoil"}]}
         end
       )
 
