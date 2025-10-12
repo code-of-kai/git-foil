@@ -20,3 +20,10 @@ Makefile linguist-documentation=true
 *.mk linguist-documentation=true
 scripts/** linguist-documentation=true
 deps/enacl/bench/** linguist-documentation=true
+
+*.env filter=gitfoil
+.env.* filter=gitfoil
+secrets/** filter=gitfoil
+*.key filter=gitfoil
+*.pem filter=gitfoil
+**/credentials.json filter=gitfoil
