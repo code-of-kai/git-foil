@@ -61,9 +61,10 @@ defmodule GitFoil.Infrastructure.FilenameEdgeCasesTest do
         GitFoil.Commands.Encrypt.run()
       end)
 
+      # Commit the file
       System.cmd("git", ["commit", "-m", "Add file with spaces"])
 
-      # Verify encrypted
+      # Verify encrypted in Git's storage
       {blob, 0} = System.cmd("git", ["cat-file", "blob", "HEAD:#{filename}"])
       refute blob == content <> "\n"
 

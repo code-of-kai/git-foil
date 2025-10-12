@@ -132,6 +132,9 @@ defmodule GitFoil.Commands.Unencrypt do
 
     case answer do
       "yes" ->
+        # Immediately show feedback before the long pause
+        IO.puts("🔍  Analyzing repository...")
+        :io.format(~c"")  # Flush output immediately
         :ok
 
       _ ->
@@ -243,7 +246,8 @@ defmodule GitFoil.Commands.Unencrypt do
   end
 
   defp remove_gitattributes_patterns do
-    IO.puts("🗑️     Removing GitFoil patterns from .gitattributes...")
+    IO.puts("🗑️  Removing GitFoil patterns from .gitattributes...")
+    :io.format(~c"")  # Flush immediately
 
     if File.exists?(".gitattributes") do
       case File.read(".gitattributes") do
@@ -267,12 +271,16 @@ defmodule GitFoil.Commands.Unencrypt do
           # Write back or delete if empty
           if new_content == "" do
             File.rm(".gitattributes")
-            IO.puts("   Removed empty .gitattributes file\n")
+            IO.puts("   ✓ Removed empty .gitattributes file")
+            :io.format(~c"")
+            IO.puts("")
             :ok
           else
             case File.write(".gitattributes", new_content <> "\n") do
               :ok ->
-                IO.puts("   Updated .gitattributes\n")
+                IO.puts("   ✓ Updated .gitattributes")
+                :io.format(~c"")
+                IO.puts("")
                 :ok
 
               {:error, reason} ->
@@ -284,13 +292,16 @@ defmodule GitFoil.Commands.Unencrypt do
           {:error, "Failed to read .gitattributes: #{UIPrompts.format_error(reason)}"}
       end
     else
-      IO.puts("   No .gitattributes file found\n")
+      IO.puts("   ✓ No .gitattributes file found")
+      :io.format(~c"")
+      IO.puts("")
       :ok
     end
   end
 
   defp remove_filter_config do
-    IO.puts("🗑️     Removing Git filter configuration...")
+    IO.puts("🗑️  Removing Git filter configuration...")
+    :io.format(~c"")
 
     filters = [
       "filter.gitfoil.clean",
@@ -303,30 +314,39 @@ defmodule GitFoil.Commands.Unencrypt do
       # Don't fail if key doesn't exist
     end)
 
-    IO.puts("   Removed filter configuration\n")
+    IO.puts("   ✓ Removed filter configuration")
+    :io.format(~c"")
+    IO.puts("")
     :ok
   end
 
   defp remove_master_key(keep_key) do
     if keep_key do
       IO.puts("🔑  Preserving master encryption key...")
-      IO.puts("   Key location: .git/git_foil/master.key")
-      IO.puts("   You can encrypt files again later with: git-foil encrypt\n")
+      :io.format(~c"")
+      IO.puts("   ✓ Key location: .git/git_foil/master.key")
+      IO.puts("   You can encrypt files again later with: git-foil encrypt")
+      IO.puts("")
       :ok
     else
-      IO.puts("🗑️     Removing master encryption key...")
+      IO.puts("🗑️  Removing master encryption key...")
+      :io.format(~c"")
 
       if File.exists?(".git/git_foil") do
         case File.rm_rf(".git/git_foil") do
           {:ok, _} ->
-            IO.puts("   Deleted .git/git_foil directory\n")
+            IO.puts("   ✓ Deleted .git/git_foil directory")
+            :io.format(~c"")
+            IO.puts("")
             :ok
 
           {:error, reason, _} ->
             {:error, "Failed to remove master key: #{UIPrompts.format_error(reason)}"}
         end
       else
-        IO.puts("   No master key found\n")
+        IO.puts("   ✓ No master key found")
+        :io.format(~c"")
+        IO.puts("")
         :ok
       end
     end

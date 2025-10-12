@@ -152,6 +152,10 @@ defmodule GitFoil.Adapters.GitFilter do
       {:error, reason} ->
         {:error, "Failed to read input: #{inspect(reason)}"}
 
+      :eof ->
+        # No input available (e.g., in tests with no stdin)
+        {:ok, ""}
+
       binary when is_binary(binary) ->
         case operation do
           :clean -> clean(binary, file_path)

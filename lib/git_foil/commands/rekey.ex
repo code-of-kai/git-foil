@@ -9,8 +9,7 @@ defmodule GitFoil.Commands.Rekey do
   Both operations re-encrypt all tracked files by forcing Git to re-run the clean filter.
   """
 
-  alias GitFoil.Helpers.UIPrompts
-  alias GitFoil.Workflows.EncryptedAdd
+  alias GitFoil.Helpers.{FileEncryption, UIPrompts}
 
   @doc """
   Rekey the repository by removing files from the index and re-adding them.
@@ -172,72 +171,8 @@ defmodule GitFoil.Commands.Rekey do
   end
 
   defp run_encrypted_add(files, total) do
-    options = [
-      progress_opts: [
-        label: "   Running git add (rekeying files)"
-      ]
-    ]
-
-    case EncryptedAdd.add_files(files, options) do
-      {:ok, %{processed: ^total}} ->
-        IO.puts("")
-        :ok
-
-      {:ok, %{processed: processed}} ->
-        {:error,
-         "Rekey completed partially: processed #{processed} of #{total} files before exiting."}
-
-      {:error, _reason, context} ->
-        {:error, format_encrypted_add_error(context)}
-    end
+    FileEncryption.add_files_with_progress(files, total)
   end
-
-  defp format_encrypted_add_error(context) do
-    path =
-      context
-      |> Map.get(:failed_paths, [])
-      |> List.wrap()
-      |> List.first()
-
-    detail = extract_error_detail(context)
-
-    case path do
-      nil -> "git add failed: #{detail}"
-      path -> "Failed to add #{path}: #{detail}"
-    end
-  end
-
-  defp extract_error_detail(%{message: message}) when is_binary(message) and message != "" do
-    String.trim(message)
-  end
-
-  defp extract_error_detail(%{stderr: stderr}) when is_binary(stderr) and stderr != "" do
-    String.trim(stderr)
-  end
-
-  defp extract_error_detail(%{stdout: stdout}) when is_binary(stdout) and stdout != "" do
-    String.trim(stdout)
-  end
-
-  defp extract_error_detail(%{exception: %_{} = exception}) do
-    Exception.message(exception)
-  rescue
-    _ -> inspect(exception)
-  end
-
-  defp extract_error_detail(%{exception: exception}) when not is_nil(exception) do
-    inspect(exception)
-  end
-
-  defp extract_error_detail(%{exit_status: status}) when is_integer(status) do
-    "git exited with status #{status}"
-  end
-
-  defp extract_error_detail(%{reason: reason}) when is_atom(reason) do
-    Atom.to_string(reason)
-  end
-
-  defp extract_error_detail(_), do: "unknown error"
 
   defp success_message(key_action) do
     key_info = case key_action do

@@ -8,7 +8,7 @@ defmodule GitFoil.CLITest do
     {:ok, _} = start_supervised(GitFoil.Adapters.InMemoryKeyStorage)
 
     {:ok, keypair} = GitFoil.Adapters.InMemoryKeyStorage.generate_keypair()
-    :ok = GitFoil.Adapters.InMemoryKeyStorage.save_keypair(keypair)
+    :ok = GitFoil.Adapters.InMemoryKeyStorage.store_keypair(keypair)
 
     :ok
   end
@@ -31,7 +31,7 @@ defmodule GitFoil.CLITest do
 
     test "returns help text with -h flag" do
       {:ok, output} = CLI.run(["-h"])
-      assert output =~ "git_foil <command>"
+      assert output =~ "git-foil <command>"
     end
   end
 
@@ -53,9 +53,9 @@ defmodule GitFoil.CLITest do
   end
 
   describe "init command" do
-    test "shows not implemented message" do
+    test "shows already initialized message when run in initialized repo" do
       {:error, message} = CLI.run(["init"])
-      assert message =~ "not yet implemented"
+      assert message =~ "already initialized"
     end
   end
 

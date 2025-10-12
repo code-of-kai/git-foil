@@ -11,7 +11,7 @@ defmodule GitFoil.Commands.Init do
   """
 
   alias GitFoil.Adapters.FileKeyStorage
-  alias GitFoil.Helpers.UIPrompts
+  alias GitFoil.Helpers.{FileEncryption, UIPrompts}
   alias GitFoil.Infrastructure.{Git, Terminal}
 
   @doc """
@@ -69,7 +69,8 @@ defmodule GitFoil.Commands.Init do
   def configure_patterns(opts \\ []) do
     terminal = Keyword.get(opts, :terminal, Terminal)
 
-    IO.puts("\n🔐  GitFoil Setup - Pattern Configuration")
+    IO.puts("")
+    IO.puts("🔐  GitFoil Setup - Pattern Configuration")
     IO.puts("")
     IO.puts("Which files should be encrypted?")
     IO.puts("[1] Everything (encrypt all files)")
@@ -563,19 +564,27 @@ desktop.ini -filter
   # ============================================================================
 
   defp get_executable_path do
-    # Detect the path to the currently running git-foil executable
-    case System.fetch_env("_") do
-      {:ok, path} when path != "" ->
-        # Use the path that was used to invoke this command
-        path
+    # In test environment, use mix run directly (avoids escript NIF loading issues)
+    if Mix.env() == :test do
+      # Get the actual project root, not the test directory
+      # __DIR__ is lib/git_foil/commands, so go up 3 levels
+      project_root = Path.expand("../../..", __DIR__)
+      "cd '#{project_root}' && mix run -e 'GitFoil.CLI.main(System.argv())' --"
+    else
+      # Detect the path to the currently running git-foil executable
+      case System.fetch_env("_") do
+        {:ok, path} when path != "" ->
+          # Use the path that was used to invoke this command
+          path
 
-      :error ->
-        # Fallback: try to find git-foil in PATH
-        case System.find_executable("git-foil") do
-          # Last resort: assume it's in PATH
-          nil -> "git-foil"
-          path -> path
-        end
+        :error ->
+          # Fallback: try to find git-foil in PATH
+          case System.find_executable("git-foil-dev") do
+            # Last resort: assume it's in PATH
+            nil -> "git-foil-dev"
+            path -> path
+          end
+      end
     end
   end
 
@@ -586,9 +595,6 @@ desktop.ini -filter
   defp maybe_encrypt_files(:skipped, _opts), do: {:ok, false}
 
   defp maybe_encrypt_files(_pattern_status, opts) do
-    # Check for system files and warn if found
-    warn_about_system_files(opts)
-
     # Count only files matching the configured encryption patterns
     case count_files_matching_patterns(opts) do
       {:ok, 0} ->
@@ -609,58 +615,6 @@ desktop.ini -filter
         IO.puts("")
         {:ok, false}
     end
-  end
-
-  defp warn_about_system_files(opts) do
-    case get_all_repository_files(opts) do
-      {:ok, all_files} ->
-        system_files = detect_system_files(all_files)
-
-        if length(system_files) > 0 do
-          IO.puts("")
-          IO.puts("⚠️  WARNING: Found system files in your repository!")
-          IO.puts("")
-
-          Enum.each(system_files, fn file ->
-            IO.puts("   • #{file}")
-          end)
-
-          IO.puts("")
-          IO.puts("   These files are being EXCLUDED from encryption.")
-          IO.puts("")
-          IO.puts("   💡 Recommended actions:")
-          IO.puts("      1. Add these patterns to .gitignore:")
-
-          system_patterns = get_system_file_patterns(system_files)
-
-          Enum.each(system_patterns, fn pattern ->
-            IO.puts("         #{pattern}")
-          end)
-
-          IO.puts("      2. Remove them from Git: git rm --cached <filename>")
-          IO.puts("      3. Commit the changes")
-          IO.puts("")
-        end
-
-      {:error, _} ->
-        # Silently ignore if we can't check for system files
-        :ok
-    end
-  end
-
-  defp detect_system_files(all_files) do
-    system_file_names = [".DS_Store", "Thumbs.db", "desktop.ini", ".Spotlight-V100", ".Trashes"]
-
-    Enum.filter(all_files, fn file ->
-      basename = Path.basename(file)
-      basename in system_file_names
-    end)
-  end
-
-  defp get_system_file_patterns(system_files) do
-    system_files
-    |> Enum.map(&Path.basename/1)
-    |> Enum.uniq()
   end
 
   defp count_files_matching_patterns(opts) do
@@ -781,37 +735,7 @@ desktop.ini -filter
   end
 
   defp add_files_with_progress(files, total, opts) do
-    terminal = Keyword.get(opts, :terminal, Terminal)
-    repository = Keyword.get(opts, :repository, Git)
-
-    files
-    |> Enum.with_index(1)
-    |> Enum.reduce_while(:ok, fn {file, index}, _acc ->
-      # Show progress (overwrite same line using ANSI escape codes)
-      # \r moves cursor to start of line, \e[K clears from cursor to end of line
-      progress_bar = terminal.progress_bar(index, total)
-      IO.write("\r\e[K   #{progress_bar} #{index}/#{total} files")
-      # Flush to ensure immediate display
-      :io.format(~c"")
-
-      # Add the file (triggers clean filter for encryption)
-      case repository.add_file(file) do
-        :ok ->
-          {:cont, :ok}
-
-        {:error, reason} ->
-          IO.write("\n")
-          {:halt, {:error, "Failed to encrypt #{file}: #{reason}"}}
-      end
-    end)
-    |> case do
-      :ok ->
-        IO.write("\n\n")
-        :ok
-
-      error ->
-        error
-    end
+    FileEncryption.add_files_with_progress(files, total, opts)
   end
 
   # ============================================================================
