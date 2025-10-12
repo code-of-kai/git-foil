@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Escript QA checker - builds and runs the actual escript users will get
+# Use this for pre-release testing to catch escript-specific issues
+
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+echo "🔨 Building production escript..."
+MIX_ENV=prod mix escript.build
+
+echo "✅ Running escript (what users will get):"
+exec ./git-foil-dev "$@"

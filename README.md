@@ -858,6 +858,92 @@ If we ever decide we need a seventh layer, the architecture will support it.
 
 ---
 
+## Development
+
+### Quick Start
+
+**Prerequisites:**
+- Elixir 1.18+ with OTP 28+
+- Rust (for NIFs)
+
+**Setup:**
+
+```bash
+# Clone the repo
+git clone https://github.com/code-of-kai/git-foil.git
+cd git-foil
+
+# Install dependencies
+mix deps.get
+mix compile
+
+# One-time: Configure git filters for dev
+bin/setup-dev
+```
+
+### Daily Development Workflow
+
+**The simple way** (AI agent & human friendly):
+
+```bash
+# Run commands - Mix auto-recompiles stale code
+bin/git-foil init
+bin/git-foil configure "*.env"
+bin/git-foil encrypt test.txt
+
+# Edit code, run again - always uses latest code
+bin/git-foil --version
+```
+
+**How it works:**
+- `bin/git-foil` calls `mix foil` under the hood
+- Mix automatically recompiles changed modules
+- No manual build step needed
+- Works from any directory
+
+### Pre-Release QA
+
+Before shipping a new version, test the actual escript:
+
+```bash
+# Build and run production escript (what users get)
+bin/es --version
+bin/es init
+bin/es configure "*.env"
+
+# Verify escript behaves identically to dev version
+```
+
+### Testing
+
+```bash
+# Run test suite
+mix test
+
+# Watch mode (optional - requires mix_test_watch)
+mix test.watch
+
+# Manual testing in a throwaway repo
+mkdir /tmp/test-repo && cd /tmp/test-repo
+git init
+~/path/to/git-foil/bin/git-foil init
+```
+
+### Using the Reusable Template
+
+This repo uses a simple, repeatable pattern that works for any Elixir CLI project.
+
+The template is available at: `/Users/kaitaylor/Documents/Coding/elixir-cli-template/`
+
+**3 files. Same across all projects:**
+1. `lib/{{app}}/cli.ex` - CLI entrypoint
+2. `lib/mix/tasks/cli.ex` - Mix task (auto-recompile)
+3. `bin/dev` + `bin/es` - Dev runner + escript QA
+
+See the template README for instructions.
+
+---
+
 ## License
 
 BSD 3-Clause License

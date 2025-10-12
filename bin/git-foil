@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Development runner for git-foil
+# This script runs the CLI via Mix, which auto-recompiles stale code.
+# No escript building required - just edit code and run.
+
+set -euo pipefail
+
+# Navigate to repository root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+cd "$REPO_ROOT"
+exec mix foil "$@"

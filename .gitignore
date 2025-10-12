@@ -37,9 +37,6 @@ burrito_out/
 # Development binaries (should be rebuilt locally)
 git-foil-dev
 
-# Development wrapper (created by scripts/mix-run.sh)
-/bin/
-
 # Test files
 test_secret.env
 

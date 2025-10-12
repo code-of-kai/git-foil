@@ -67,7 +67,7 @@ defmodule GitFoil.Commands.Pattern do
               💡  Next step - commit your changes:
                  git-foil commit
 
-                 🔍  What this does:
+                 Or use git directly:
                     git add .gitattributes
                     git commit -m "Add GitFoil pattern: #{pattern}"
               """}
@@ -94,7 +94,7 @@ defmodule GitFoil.Commands.Pattern do
             💡  Next step - commit your changes:
                git-foil commit
 
-               🔍  What this does:
+               Or use git directly:
                   git add .gitattributes
                   git commit -m "Configure GitFoil encryption"
             """}
@@ -152,8 +152,8 @@ defmodule GitFoil.Commands.Pattern do
                 💡  Next step - commit your changes:
                    git-foil commit
 
-                   🔍  What this does:
-                      git add .gitattributes (and decrypted files)
+                   Or use git directly:
+                      git add .gitattributes
                       git commit -m "Remove GitFoil pattern: #{pattern}"
                 """}
 
@@ -384,27 +384,12 @@ defmodule GitFoil.Commands.Pattern do
     📝  #{action_text} .gitattributes:
        #{patterns_display}
 
-    💡  Next step - commit your changes.
-
-       You can use the git-foil convenience command:
+    💡  Next step - commit your changes:
           git-foil commit
 
        Or use git directly:
           git add .gitattributes
           git commit -m "Configure GitFoil encryption"
-
-    📋  How encryption works:
-       Encryption happens automatically when you commit files.
-       Decryption happens automatically when you checkout files.
-
-       You can use git-foil commands:
-          git-foil encrypt    # Encrypts and stages matching files
-          git-foil commit     # Commits staged files
-
-       Or use git commands directly (git-foil wraps these):
-          git add <file>      # Encrypts and stages matching files
-          git commit          # Commits encrypted files
-          git checkout <file> # Decrypts files to working directory
     """
   end
 

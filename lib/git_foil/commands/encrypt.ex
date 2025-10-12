@@ -221,24 +221,15 @@ defmodule GitFoil.Commands.Encrypt do
     """
     ✅  Encryption complete!
 
-    📋  What happened:
-       #{key_info}
-       Files matching your .gitattributes patterns were encrypted.
-
-       🔍  What this did:
-          git ls-files                    # List all tracked files
-          git ls-files --others           # List untracked files
-          git add <each-file>             # Add each file (triggers clean filter)
+    📋  #{key_info}
+       Files matching your .gitattributes patterns were encrypted and staged.
 
     💡  Next step - commit the encrypted files:
        git-foil commit
 
-       🔍  What this does:
+       Or use git directly:
           git add .
           git commit -m "Add encrypted files"
-
-    📌 Note: Files in your working directory remain plaintext.
-       Only the versions stored in Git are encrypted.
     """
   end
 

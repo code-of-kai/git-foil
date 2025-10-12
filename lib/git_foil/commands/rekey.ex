@@ -195,20 +195,15 @@ defmodule GitFoil.Commands.Rekey do
     """
     ✅  Rekey complete!
 
-    📋  What happened:
-       #{key_info}
+    📋  #{key_info}
        Files rekeyed and now match your current .gitattributes patterns.
-
-       🔍  What this did:
-          git rm --cached -r .            # Remove all files from index
-          git add <each-file>             # Re-add each file (triggers clean filter)
 #{key_rotation_note}
     💡  Next step - commit the changes:
-       git commit -m "Rekey repository with updated encryption"
-       git push
+       git-foil commit
 
-    📌 Note: Files in your working directory are unchanged.
-       Only the versions stored in Git have been rekeyed.
+       Or use git directly:
+          git commit -m "Rekey repository with updated encryption"
+          git push
     """
   end
 

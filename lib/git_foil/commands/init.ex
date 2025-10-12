@@ -896,32 +896,20 @@ desktop.ini -filter
     💡  Next step - commit the encrypted files:
        git-foil commit
 
-       🔍  What this does:
+       Or use git directly:
           git commit -m "Add encrypted files"
-
-    📌 Note: Files in your working directory remain plaintext.
-       Only the versions stored in Git are encrypted.
     """
   end
 
   defp get_pattern_message(:everything, false) do
     """
 
-    🔒  Encryption is active!
-       📋  All files will be encrypted.
+    🔒  Encryption is active! All files will be encrypted.
 
-    💡  Try it out - create a test file:
-       echo "IT'S A SECRET TO EVERYBODY." > test.txt
-
-       Use git-foil commands:
-          git-foil encrypt    # Encrypts and stages test.txt
-          git-foil commit     # Commits encrypted file
-
-       Or use git directly (git-foil wraps these):
-          git add test.txt    # Encrypts and stages test.txt
-          git commit -m "Add test file"
-
-       Files are encrypted when committed and decrypted when checked out.
+    💡  Try it out:
+       echo "secret" > test.txt
+       git add test.txt        # Encrypts automatically
+       git commit -m "Test"
     """
   end
 
@@ -940,11 +928,8 @@ desktop.ini -filter
     💡  Next step - commit the encrypted files:
        git-foil commit
 
-       🔍  What this does:
+       Or use git directly:
           git commit -m "Add encrypted files"
-
-    📌 Note: Files in your working directory remain plaintext.
-       Only the versions stored in Git are encrypted.
     """
   end
 
@@ -953,23 +938,15 @@ desktop.ini -filter
 
     🔒  Encryption is active!
        📋  Patterns configured:
-          • Environment files will be encrypted (*.env, .env.*)
-          • Secrets directory will be encrypted (secrets/**)
-          • Key files will be encrypted (*.key, *.pem)
-          • Credentials will be encrypted (credentials.json)
+          • Environment files (*.env, .env.*)
+          • Secrets directory (secrets/**)
+          • Key files (*.key, *.pem)
+          • Credentials (credentials.json)
 
-    💡  Try it out - create a secret file:
+    💡  Try it out:
        echo "API_KEY=secret123" > .env
-
-       Use git-foil commands:
-          git-foil encrypt    # Encrypts and stages .env
-          git-foil commit     # Commits encrypted file
-
-       Or use git directly (git-foil wraps these):
-          git add .env        # Encrypts and stages .env
-          git commit -m "Add environment variables"
-
-       Files are encrypted when committed and decrypted when checked out.
+       git add .env        # Encrypts automatically
+       git commit -m "Add secrets"
     """
   end
 
@@ -982,11 +959,8 @@ desktop.ini -filter
     💡  Next step - commit the encrypted files:
        git-foil commit
 
-       🔍  What this does:
+       Or use git directly:
           git commit -m "Add encrypted files"
-
-    📌 Note: Files in your working directory remain plaintext.
-       Only the versions stored in Git are encrypted.
     """
   end
 
@@ -996,18 +970,10 @@ desktop.ini -filter
     🔒  Encryption is active!
        📋  Environment files will be encrypted (*.env, .env.*).
 
-    💡  Try it out - create an environment file:
+    💡  Try it out:
        echo "DATABASE_URL=postgresql://localhost" > .env.local
-
-       Use git-foil commands:
-          git-foil encrypt    # Encrypts and stages .env.local
-          git-foil commit     # Commits encrypted file
-
-       Or use git directly (git-foil wraps these):
-          git add .env.local  # Encrypts and stages .env.local
-          git commit -m "Add local environment config"
-
-       Files are encrypted when committed and decrypted when checked out.
+       git add .env.local  # Encrypts automatically
+       git commit -m "Add config"
     """
   end
 
@@ -1021,11 +987,8 @@ desktop.ini -filter
     💡  Next step - commit the encrypted files:
        git-foil commit
 
-       🔍  What this does:
+       Or use git directly:
           git commit -m "Add encrypted files"
-
-    📌 Note: Files in your working directory remain plaintext.
-       Only the versions stored in Git are encrypted.
     """
   end
 

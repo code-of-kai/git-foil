@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# One-time development environment setup
+# Configures git filters to use the dev version via bin/git-foil
+
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+echo "🔧 Configuring git filters for development..."
+
+# Configure git filters to use bin/git-foil (mix-based, auto-recompiles)
+git config filter.gitfoil.clean "./bin/git-foil clean %f"
+git config filter.gitfoil.smudge "./bin/git-foil smudge %f"
+git config filter.gitfoil.required true
+
+echo "✅ Git filters configured!"
+echo ""
+echo "Git filters now use: ./bin/git-foil (mix-based, auto-recompiles)"
+echo ""
+echo "Daily workflow:"
+echo "  bin/git-foil init              # Always uses latest code"
+echo "  bin/git-foil configure '*.env'"
+echo ""
+echo "Pre-release QA:"
+echo "  bin/es --version               # Test actual escript"
