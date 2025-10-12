@@ -1,0 +1,22 @@
+# Language detection overrides for GitHub Linguist
+
+# Rust build artifacts (auto-generated FFI bindings)
+# These .snippet files are Rust code, not Vim snippets
+*.snippet linguist-language=Rust linguist-generated=true
+
+# Mark all build artifacts as generated to exclude from language stats
+native/*/target/** linguist-generated=true
+_build/** linguist-generated=true
+deps/** linguist-vendored=true
+
+# Ensure Rust NIFs are properly detected
+*.rs linguist-language=Rust
+
+# Exclude tooling and build scripts from language statistics
+# These support the main codebase but aren't core functionality
+*.sh linguist-documentation=true
+*.d linguist-documentation=true
+Makefile linguist-documentation=true
+*.mk linguist-documentation=true
+scripts/** linguist-documentation=true
+deps/enacl/bench/** linguist-documentation=true

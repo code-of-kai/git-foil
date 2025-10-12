@@ -3,6 +3,9 @@
 /deps/
 /*.ez
 
+# Rust build artifacts (should not be committed)
+native/*/target/
+
 # Elixir crash dumps
 erl_crash.dump
 
