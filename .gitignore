@@ -34,11 +34,14 @@ temp/
 git-veil
 burrito_out/
 
-# Escript build artifacts (removed)
-# /git-foil
+# Development binaries (should be rebuilt locally)
+git-foil-dev
 
 # Development wrapper (created by scripts/mix-run.sh)
 /bin/
 
 # Test files
 test_secret.env
+
+# Local development scripts (machine-specific paths)
+scripts/run-tests-local.sh
