@@ -231,13 +231,13 @@ All algorithms are competition winners or IETF/NIST standards. We didn't just pi
 
 ### Security Limitations
 
-⚠️ **Master key stored unencrypted** - The `.git/git_foil/master.key` file is stored as plaintext binary on disk, protected only by filesystem permissions (0600). If someone gets filesystem access to your machine, they can read your keys.
+⚠️ **Master key storage** - By default, the `.git/git_foil/master.key` file is stored as plaintext binary on disk, protected only by filesystem permissions (0600).
 
-⚠️ **No password protection** - Unlike SSH keys with passphrases, the master key has no additional encryption layer. Full disk encryption is your only protection against laptop theft.
+✅ **Password protection available** - Use `git-foil init --password` to encrypt your master key with a password (PBKDF2 + AES-256-GCM). This provides additional protection against stolen laptop scenarios. The encrypted key is stored in `.git/git_foil/master.key.enc` instead.
 
 ⚠️ **Shared key model** - All team members use the same master key file. Can't revoke individual team member access without re-keying the entire repository.
 
-**Think of it like SSH keys:** They're also unencrypted files protected by filesystem permissions. GitFoil's security model assumes you trust your local filesystem and use disk encryption.
+**Security Model:** Without password protection, GitFoil's security model is similar to SSH keys—unencrypted files protected by filesystem permissions. With password protection enabled, your master key gains an additional encryption layer, similar to SSH keys with passphrases. Full disk encryption is still recommended for comprehensive local security.
 
 ---
 
@@ -315,13 +315,27 @@ GitFoil uses native cryptographic libraries (Rust NIFs for AEGIS/Ascon/etc., C N
 
 ### Initialize Your Repo
 
+**Option 1: Quick setup (no password)**
+
 ```bash
 cd /path/to/your/precious/repo
 
 git-foil init
 
-# No password required - generates random quantum-resistant keys
-# Keys stored in .git/git_foil/master.key
+# Generates random quantum-resistant keys
+# Keys stored in .git/git_foil/master.key (protected by filesystem permissions)
+```
+
+**Option 2: Enhanced security (password-protected)**
+
+```bash
+cd /path/to/your/precious/repo
+
+git-foil init --password
+
+# Prompts for password (with confirmation)
+# Keys stored encrypted in .git/git_foil/master.key.enc
+# Uses PBKDF2 (600K iterations) + AES-256-GCM
 ```
 
 That's it. GitFoil hooks into Git's filter system and vanishes.
@@ -342,11 +356,65 @@ Every time you `git checkout`, files get decrypted.
 
 ### Key Storage
 
+**Without password protection:**
 - **Location:** `.git/git_foil/master.key`
 - **Format:** Binary keypair (Kyber1024 + classical)
 - **Permissions:** 0600 (owner read/write only)
 - **Security:** Protected by filesystem permissions only
 - **Important:** Back up this file! Without it, you cannot decrypt your files.
+
+**With password protection (`--password` flag):**
+- **Location:** `.git/git_foil/master.key.enc`
+- **Format:** Encrypted binary keypair
+- **Encryption:** PBKDF2-HMAC-SHA512 (600,000 iterations) + AES-256-GCM
+- **Permissions:** 0600 (owner read/write only)
+- **Security:** Protected by password + filesystem permissions
+- **Important:** Remember your password! There is NO password recovery mechanism. Back up your encrypted key file!
+
+### Password Protection Best Practices
+
+**When to use password protection:**
+- ✅ Laptop travels frequently (conferences, coffee shops, etc.)
+- ✅ Working on highly sensitive projects
+- ✅ Shared workstations or multi-user systems
+- ✅ Compliance requirements for encrypted key storage
+- ✅ You want defense-in-depth (filesystem permissions + encryption)
+
+**When password protection may be optional:**
+- Desktop workstation in secure location
+- Full disk encryption already enabled (FileVault/BitLocker/LUKS)
+- Low-sensitivity personal projects
+- Team workflow requires frequent key sharing
+
+**Password recommendations:**
+- Minimum 8 characters (enforced by GitFoil)
+- Use a password manager to generate and store it
+- Consider a passphrase: "correct horse battery staple" style
+- Don't reuse passwords from other services
+
+**CI/CD Integration:**
+GitFoil supports the `GIT_FOIL_PASSWORD` environment variable for automation:
+
+```bash
+# In CI/CD, set the password as an environment variable
+export GIT_FOIL_PASSWORD="your-password-from-secrets"
+
+# GitFoil will automatically use it without prompting
+git clone your-repo && cd your-repo
+git-foil init  # Uses $GIT_FOIL_PASSWORD automatically
+```
+
+⚠️ **Security Warning:** Environment variables can leak to debuggers, logs, and other processes running under the same user. The `GIT_FOIL_PASSWORD` variable is **intended for CI/CD systems only**, not for interactive shells on shared systems. For daily use, let GitFoil prompt you for the password instead.
+
+**Migrating between modes:**
+
+```bash
+# Add password protection to existing repo
+git-foil init --password --force
+
+# Your old plaintext key is automatically backed up
+# New encrypted key created at .git/git_foil/master.key.enc
+```
 
 ---
 

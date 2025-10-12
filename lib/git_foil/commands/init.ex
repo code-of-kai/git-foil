@@ -10,7 +10,9 @@ defmodule GitFoil.Commands.Init do
   5. Creates .gitattributes template (optional)
   """
 
-  alias GitFoil.Adapters.FileKeyStorage
+  alias GitFoil.Adapters.{FileKeyStorage, PasswordProtectedKeyStorage}
+  alias GitFoil.Core.KeyManager
+  alias GitFoil.CLI.PasswordPrompt
   alias GitFoil.Helpers.{FileEncryption, UIPrompts}
   alias GitFoil.Infrastructure.{Git, Terminal}
 
@@ -20,6 +22,7 @@ defmodule GitFoil.Commands.Init do
   ## Options
   - `:force` - Overwrite existing keypair if present (default: false)
   - `:skip_patterns` - Skip pattern configuration (default: false)
+  - `:password` - Enable password protection for master key (default: false)
   - `:repository` - Git repository adapter (default: GitFoil.Infrastructure.Git)
   - `:terminal` - Terminal UI adapter (default: GitFoil.Infrastructure.Terminal)
 
@@ -30,13 +33,19 @@ defmodule GitFoil.Commands.Init do
   def run(opts \\ []) do
     force = Keyword.get(opts, :force, false)
     skip_patterns = Keyword.get(opts, :skip_patterns, false)
+    use_password = Keyword.get(opts, :password, false)
 
     # Dependency injection - defaults to real implementations
     repository = Keyword.get(opts, :repository, Git)
     terminal = Keyword.get(opts, :terminal, Terminal)
 
     # Store in opts for passing to helper functions
-    opts = Keyword.merge(opts, repository: repository, terminal: terminal)
+    opts =
+      Keyword.merge(opts,
+        repository: repository,
+        terminal: terminal,
+        use_password: use_password
+      )
 
     with :ok <- verify_git_repository(opts),
          :ok <- check_already_fully_initialized(force, opts),
@@ -252,7 +261,10 @@ desktop.ini -filter
   defp check_already_fully_initialized(true = _force, _opts), do: :ok
 
   defp check_already_fully_initialized(false = _force, _opts) do
-    has_key? = File.exists?(".git/git_foil/master.key")
+    has_key? =
+      File.exists?(".git/git_foil/master.key") or
+        File.exists?(".git/git_foil/master.key.enc")
+
     {has_patterns?, pattern_count} = check_gitattributes_patterns()
 
     case {has_key?, has_patterns?} do
@@ -304,15 +316,22 @@ desktop.ini -filter
   end
 
   defp check_existing_initialization(force, opts) do
-    case FileKeyStorage.initialized?() do
-      false ->
+    # Check both plaintext and password-protected storage
+    has_plaintext = FileKeyStorage.initialized?()
+    has_password_protected = PasswordProtectedKeyStorage.initialized?()
+
+    case {has_plaintext, has_password_protected, force} do
+      {false, false, _} ->
+        # No existing key, generate new
         {:ok, :generate_new}
 
-      true when force ->
+      {_, _, true} ->
+        # Force flag set, overwrite existing key
         IO.puts("⚠️     Overwriting existing encryption key (--force flag)\n")
         {:ok, :generate_new}
 
-      true ->
+      _ ->
+        # Existing key found, prompt user
         prompt_key_choice(opts)
     end
   end
@@ -351,15 +370,31 @@ desktop.ini -filter
       |> String.replace(":", "-")
       |> String.replace(".", "-")
 
-    backup_filename = "master.key.backup.#{timestamp}"
-    backup_path = ".git/git_foil/#{backup_filename}"
+    # Determine which key file exists
+    {source_path, backup_filename} =
+      cond do
+        File.exists?(".git/git_foil/master.key.enc") ->
+          {".git/git_foil/master.key.enc", "master.key.enc.backup.#{timestamp}"}
 
-    case File.rename(".git/git_foil/master.key", backup_path) do
-      :ok ->
-        {:ok, backup_path}
+        File.exists?(".git/git_foil/master.key") ->
+          {".git/git_foil/master.key", "master.key.backup.#{timestamp}"}
 
-      {:error, reason} ->
-        {:error, UIPrompts.format_error(reason)}
+        true ->
+          {nil, nil}
+      end
+
+    if source_path do
+      backup_path = ".git/git_foil/#{backup_filename}"
+
+      case File.rename(source_path, backup_path) do
+        :ok ->
+          {:ok, backup_path}
+
+        {:error, reason} ->
+          {:error, UIPrompts.format_error(reason)}
+      end
+    else
+      {:error, "No existing key found to backup"}
     end
   end
 
@@ -436,7 +471,7 @@ desktop.ini -filter
     keypair_result =
       terminal.with_spinner(
         "Generating quantum-resistant encryption keys",
-        fn -> do_generate_keypair(3000) end
+        fn -> do_generate_keypair(3000, opts) end
       )
 
     case keypair_result do
@@ -464,16 +499,38 @@ desktop.ini -filter
     end
   end
 
-  defp do_generate_keypair(min_duration) do
+  defp do_generate_keypair(min_duration, opts) do
     start_time = System.monotonic_time(:millisecond)
+    use_password = Keyword.get(opts, :use_password, false)
 
     result =
-      with {:ok, keypair} <- FileKeyStorage.generate_keypair(),
-           :ok <- FileKeyStorage.store_keypair(keypair) do
-        {:ok, keypair}
+      if use_password do
+        # Password protection requested - prompt for password
+        case PasswordPrompt.get_password("Enter password for master key: ", confirm: true) do
+          {:ok, password} ->
+            case KeyManager.init_with_password(password) do
+              {:ok, keypair} ->
+                {:ok, keypair}
+
+              {:error, reason} ->
+                {:error, "Failed to initialize with password: #{UIPrompts.format_error(reason)}"}
+            end
+
+          {:error, :password_mismatch} ->
+            {:error, "Passwords do not match. Please try again."}
+
+          {:error, reason} ->
+            {:error, "Password prompt failed: #{PasswordPrompt.format_error(reason)}"}
+        end
       else
-        {:error, reason} ->
-          {:error, "Failed to generate keypair: #{UIPrompts.format_error(reason)}"}
+        # No password protection - use plaintext storage
+        with {:ok, keypair} <- FileKeyStorage.generate_keypair(),
+             :ok <- FileKeyStorage.store_keypair(keypair) do
+          {:ok, keypair}
+        else
+          {:error, reason} ->
+            {:error, "Failed to generate keypair: #{UIPrompts.format_error(reason)}"}
+        end
       end
 
     # Ensure minimum duration
@@ -744,14 +801,24 @@ desktop.ini -filter
 
   defp success_message(pattern_status, encrypted, opts) do
     repository = Keyword.get(opts, :repository, Git)
+    use_password = Keyword.get(opts, :use_password, false)
     key_info = UIPrompts.master_key_info(repository: repository)
     location_line = UIPrompts.master_key_location_line(repository: repository)
+
+    # Determine key protection message
+    protection_message =
+      if use_password do
+        "       Protected with password encryption (PBKDF2 + AES-256-GCM)."
+      else
+        ""
+      end
 
     base_config = """
     ✅  GitFoil setup complete!
 
     🔐  Quantum-resistant encryption initialized:
        Generated Kyber1024 post-quantum keypair.
+    #{protection_message}
        Enabled automatic encryption.
        Files will encrypt when you git add or git commit.
        Files will decrypt when you git checkout or git pull.
@@ -762,15 +829,32 @@ desktop.ini -filter
 
     pattern_message = get_pattern_message(pattern_status, encrypted)
 
-    warning = """
+    warning =
+      if use_password do
+        """
 
-    ⚠️  IMPORTANT: Back up your master.key!
-       Without this key, you cannot decrypt your files.
-       Store it securely in a password manager or encrypted backup.
+        ⚠️  IMPORTANT: Remember your password!
+           Your master key is encrypted with your password.
+           Without the password, you cannot decrypt your files.
+           There is NO password recovery mechanism.
 
-       Your key can be found here:
-       #{key_info.path}
-    """
+           Your encrypted key is stored here:
+           #{key_info.path}
+        """
+      else
+        """
+
+        ⚠️  IMPORTANT: Back up your master.key!
+           Without this key, you cannot decrypt your files.
+           Store it securely in a password manager or encrypted backup.
+
+           Your key can be found here:
+           #{key_info.path}
+
+           💡  Tip: Use --password flag to encrypt your key with a password:
+              git-foil init --password --force
+        """
+      end
 
     base_config <> pattern_message <> warning
   end

@@ -25,9 +25,9 @@ defmodule GitFoil.Adapters.GitFilter do
 
   @behaviour GitFoil.Ports.Filter
 
-  alias GitFoil.Core.EncryptionEngine
+  alias GitFoil.Core.{EncryptionEngine, KeyManager}
+  alias GitFoil.CLI.PasswordPrompt
   alias GitFoil.Adapters.{
-    FileKeyStorage,
     OpenSSLCrypto,
     AegisCrypto,
     SchwaemmCrypto,
@@ -73,14 +73,61 @@ defmodule GitFoil.Adapters.GitFilter do
     end
   end
 
-  # Loads master encryption key from storage
+  # Loads master encryption key from storage (plaintext or password-protected)
   defp load_master_key do
-    case FileKeyStorage.initialized?() do
-      true ->
-        FileKeyStorage.derive_master_key()
+    case KeyManager.initialization_status() do
+      {:initialized, :password_protected} ->
+        # Password-protected storage - try to unlock
+        unlock_password_protected()
 
-      false ->
+      {:initialized, :plaintext} ->
+        # Plaintext storage - load directly
+        KeyManager.unlock_without_password()
+
+      :not_initialized ->
         {:error, :not_initialized}
+    end
+  end
+
+  # Unlocks password-protected storage
+  # First checks if already unlocked (cached), then prompts if needed
+  defp unlock_password_protected do
+    case KeyManager.get_master_key() do
+      {:ok, master_key} ->
+        # Already unlocked in this process
+        {:ok, master_key}
+
+      {:error, :locked} ->
+        # Not yet unlocked - try environment variable first, then prompt
+        case System.get_env("GIT_FOIL_PASSWORD") do
+          nil ->
+            # No env var - prompt for password
+            prompt_for_password()
+
+          password when is_binary(password) ->
+            # Use password from environment
+            KeyManager.unlock_with_password(password)
+        end
+    end
+  end
+
+  # Prompts user for password to unlock key
+  defp prompt_for_password do
+    case PasswordPrompt.get_password("GitFoil password: ") do
+      {:ok, password} ->
+        case KeyManager.unlock_with_password(password) do
+          {:ok, master_key} ->
+            {:ok, master_key}
+
+          {:error, :invalid_password} ->
+            {:error, "Invalid password. Run 'git-foil init' if you've lost your password."}
+
+          {:error, reason} ->
+            {:error, "Failed to unlock: #{inspect(reason)}"}
+        end
+
+      {:error, reason} ->
+        {:error, "Password prompt failed: #{PasswordPrompt.format_error(reason)}"}
     end
   end
 
