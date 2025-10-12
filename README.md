@@ -933,7 +933,7 @@ git init
 
 This repo uses a simple, repeatable pattern that works for any Elixir CLI project.
 
-The template is available at: `/Users/kaitaylor/Documents/Coding/elixir-cli-template/`
+**Template:** [github.com/code-of-kai/elixir-cli-template](https://github.com/code-of-kai/elixir-cli-template)
 
 **3 files. Same across all projects:**
 1. `lib/{{app}}/cli.ex` - CLI entrypoint
