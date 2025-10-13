@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# TruePath Setup - Solves the name resolution/PATH precedence problem
+# Creates symlink in ~/.local/bin so you can type just the command name
+# Safe to run multiple times (idempotent)
+
+set -euo pipefail
+
+# CLI name for git-foil
+CLI_NAME="git-foil"
+
+# Get absolute path to project root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Paths
+LOCAL_BIN="$HOME/.local/bin"
+SYMLINK_PATH="$LOCAL_BIN/$CLI_NAME"
+TARGET_PATH="$PROJECT_ROOT/bin/$CLI_NAME"
+
+echo "🔧 TruePath Setup for $CLI_NAME"
+echo ""
+
+# Step 1: Ensure ~/.local/bin exists
+if [ ! -d "$LOCAL_BIN" ]; then
+    echo "📁 Creating $LOCAL_BIN..."
+    mkdir -p "$LOCAL_BIN"
+    echo "✅ Created $LOCAL_BIN"
+else
+    echo "✅ $LOCAL_BIN already exists"
+fi
+echo ""
+
+# Step 2: Check if symlink already exists and is correct
+if [ -L "$SYMLINK_PATH" ]; then
+    CURRENT_TARGET=$(readlink "$SYMLINK_PATH")
+    if [ "$CURRENT_TARGET" = "$TARGET_PATH" ]; then
+        echo "✅ Symlink already configured correctly"
+        echo "   $SYMLINK_PATH → $TARGET_PATH"
+        SYMLINK_EXISTS=true
+    else
+        echo "⚠️  Symlink exists but points to wrong location"
+        echo "   Current: $SYMLINK_PATH → $CURRENT_TARGET"
+        echo "   Expected: $TARGET_PATH"
+        echo "   Updating symlink..."
+        rm "$SYMLINK_PATH"
+        ln -s "$TARGET_PATH" "$SYMLINK_PATH"
+        echo "✅ Symlink updated"
+        SYMLINK_EXISTS=false
+    fi
+elif [ -e "$SYMLINK_PATH" ]; then
+    echo "❌ $SYMLINK_PATH exists but is not a symlink"
+    echo "   Please remove it manually and run setup again"
+    exit 1
+else
+    echo "🔗 Creating symlink..."
+    ln -s "$TARGET_PATH" "$SYMLINK_PATH"
+    echo "✅ Symlink created: $SYMLINK_PATH → $TARGET_PATH"
+    SYMLINK_EXISTS=false
+fi
+echo ""
+
+# Step 3: Check if ~/.local/bin is in PATH
+PATH_CONFIGURED=false
+if [[ ":$PATH:" == *":$LOCAL_BIN:"* ]]; then
+    echo "✅ $LOCAL_BIN is in your PATH"
+    PATH_CONFIGURED=true
+else
+    echo "⚠️  $LOCAL_BIN is not in your PATH"
+    echo ""
+
+    # Detect shell
+    SHELL_RC=""
+    if [ -n "${ZSH_VERSION:-}" ] || [ "$SHELL" = "$(which zsh 2>/dev/null)" ]; then
+        SHELL_RC="$HOME/.zshrc"
+        SHELL_NAME="zsh"
+    elif [ -n "${BASH_VERSION:-}" ] || [ "$SHELL" = "$(which bash 2>/dev/null)" ]; then
+        SHELL_RC="$HOME/.bashrc"
+        SHELL_NAME="bash"
+    fi
+
+    if [ -n "$SHELL_RC" ]; then
+        echo "📝 Adding $LOCAL_BIN to PATH in $SHELL_RC..."
+
+        # Check if already in shell config but not in current PATH
+        if grep -q "/.local/bin" "$SHELL_RC" 2>/dev/null; then
+            echo "✅ PATH entry already in $SHELL_RC (reload shell to activate)"
+        else
+            # Add to shell config
+            echo "" >> "$SHELL_RC"
+            echo "# Added by TruePath - enables CLI development tools" >> "$SHELL_RC"
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$SHELL_RC"
+            echo "✅ Added to $SHELL_RC"
+        fi
+
+        echo ""
+        echo "⚡ To activate in current shell, run:"
+        echo "   source $SHELL_RC"
+        echo ""
+        echo "   Or start a new terminal session"
+    else
+        echo "⚠️  Could not detect shell type"
+        echo "   Please add this to your shell config manually:"
+        echo '   export PATH="$HOME/.local/bin:$PATH"'
+    fi
+fi
+echo ""
+
+# Step 4: Install dependencies and compile
+echo "📦 Installing dependencies and compiling..."
+cd "$PROJECT_ROOT"
+mix deps.get > /dev/null 2>&1 || true
+mix compile > /dev/null 2>&1 || true
+echo "✅ Project compiled"
+echo ""
+
+# Summary
+echo "════════════════════════════════════════════════"
+if [ "$SYMLINK_EXISTS" = true ] && [ "$PATH_CONFIGURED" = true ]; then
+    echo "✅ Setup already complete - no changes needed!"
+else
+    echo "✅ Setup complete!"
+fi
+echo "════════════════════════════════════════════════"
+echo ""
+echo "🎯 You can now use:"
+echo "   $CLI_NAME [command]         # Daily development (auto-recompiles)"
+echo "   bin/float [command]         # Pre-release QA (production escript)"
+echo ""
+echo "💡 Example:"
+echo "   $CLI_NAME --version"
+echo "   $CLI_NAME --help"
+echo ""

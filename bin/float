@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# TruePath Float - Test production escript before release
+# Builds the actual escript users will receive and runs it for QA
+
+set -euo pipefail
+
+# CLI name for git-foil
+CLI_NAME="git-foil"
+
+# Navigate to project root
+cd "$(dirname "$0")/.."
+
+echo "🔨 Building production escript..."
+echo ""
+
+# Build escript with production environment
+if MIX_ENV=prod mix escript.build; then
+    echo ""
+    echo "✅ Escript built successfully: ./$CLI_NAME"
+    echo ""
+    echo "🚀 Running production escript (what users will get):"
+    echo "════════════════════════════════════════════════"
+    echo ""
+
+    # Execute the escript with all arguments
+    exec "./$CLI_NAME" "$@"
+else
+    echo ""
+    echo "❌ Failed to build escript"
+    echo ""
+    echo "💡 Common issues:"
+    echo "   - Missing escript config in mix.exs"
+    echo "   - Compilation errors"
+    echo "   - Missing dependencies"
+    echo ""
+    echo "Check mix.exs has:"
+    echo "   escript: [main_module: YourApp.CLI, name: \"$CLI_NAME\"]"
+    exit 1
+fi
