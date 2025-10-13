@@ -10,4 +10,4 @@ echo "🔨 Building production escript..."
 MIX_ENV=prod mix escript.build
 
 echo "✅ Running escript (what users will get):"
-exec ./git-foil-dev "$@"
+exec ./git-foil "$@"

@@ -35,7 +35,7 @@ git-veil
 burrito_out/
 
 # Development binaries (should be rebuilt locally)
-git-foil-dev
+git-foil
 
 # Test files
 test_secret.env

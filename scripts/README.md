@@ -73,10 +73,6 @@ brew update && brew upgrade git-foil
 
 ## Other Scripts
 
-### mix-run.sh
-
-Legacy script that creates a wrapper using `mix run`. Superseded by `bin/git-foil` which uses Mix tasks.
-
 ### run-tests-local.sh
 
 Runs the test suite with coverage reporting.

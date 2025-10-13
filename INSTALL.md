@@ -51,18 +51,12 @@ cd git-foil
 mix deps.get
 MIX_ENV=prod mix compile
 
-# Create wrapper script and install
-cat > /usr/local/bin/git-foil <<'EOF'
-#!/bin/bash
-cd "$(dirname "$0")/../lib/git-foil" && MIX_ENV=prod mix run -e "GitFoil.CLI.main(System.argv())" -- "$@"
-EOF
+# Build escript
+MIX_ENV=prod mix escript.build
 
-# Make executable
-chmod +x /usr/local/bin/git-foil
-
-# Move compiled application
-sudo mkdir -p /usr/local/lib/git-foil
-sudo cp -r * /usr/local/lib/git-foil/
+# Install to system
+sudo cp git-foil /usr/local/bin/git-foil
+sudo chmod +x /usr/local/bin/git-foil
 
 # Verify installation
 git-foil --version
