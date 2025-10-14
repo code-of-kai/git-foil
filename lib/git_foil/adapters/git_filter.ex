@@ -48,8 +48,11 @@ defmodule GitFoil.Adapters.GitFilter do
       {:error, :not_initialized} ->
         {:error, "GitFoil not initialized - run 'git-foil init' first"}
 
+      {:error, %UndefinedFunctionError{module: module}} ->
+        {:error, "Crypto library not loaded (#{inspect(module)}). Escripts cannot load NIFs. Use 'mix run' instead or create a proper release with 'mix release'."}
+
       {:error, reason} ->
-        {:error, "Encryption failed: #{inspect(reason)}"}
+        {:error, "Encryption failed: #{format_error(reason)}"}
     end
   end
 
@@ -68,8 +71,11 @@ defmodule GitFoil.Adapters.GitFilter do
         # This handles files that were committed before encryption was enabled
         {:ok, encrypted}
 
+      {:error, %UndefinedFunctionError{module: module}} ->
+        {:error, "Crypto library not loaded (#{inspect(module)}). Escripts cannot load NIFs. Use 'mix run' instead or create a proper release with 'mix release'."}
+
       {:error, reason} ->
-        {:error, "Decryption failed: #{inspect(reason)}"}
+        {:error, "Decryption failed: #{format_error(reason)}"}
     end
   end
 
@@ -140,33 +146,43 @@ defmodule GitFoil.Adapters.GitFilter do
   # - Layer 5: Ascon-128a
   # - Layer 6: ChaCha20-Poly1305
   defp encrypt_content(plaintext, master_key, file_path) do
-    EncryptionEngine.encrypt(
-      plaintext,
-      master_key,
-      OpenSSLCrypto,           # Layer 1: AES-256-GCM
-      AegisCrypto,             # Layer 2: AEGIS-256
-      SchwaemmCrypto,          # Layer 3: Schwaemm256-256
-      DeoxysCrypto,            # Layer 4: Deoxys-II-256
-      AsconCrypto,             # Layer 5: Ascon-128a
-      ChaCha20Poly1305Crypto,  # Layer 6: ChaCha20-Poly1305
-      file_path
-    )
+    try do
+      EncryptionEngine.encrypt(
+        plaintext,
+        master_key,
+        OpenSSLCrypto,           # Layer 1: AES-256-GCM
+        AegisCrypto,             # Layer 2: AEGIS-256
+        SchwaemmCrypto,          # Layer 3: Schwaemm256-256
+        DeoxysCrypto,            # Layer 4: Deoxys-II-256
+        AsconCrypto,             # Layer 5: Ascon-128a
+        ChaCha20Poly1305Crypto,  # Layer 6: ChaCha20-Poly1305
+        file_path
+      )
+    rescue
+      e in UndefinedFunctionError ->
+        {:error, e}
+    end
   end
 
   # Decrypts encrypted blob using the full decryption pipeline
   # Must use same providers in same order as encryption
   defp decrypt_content(blob, master_key, file_path) do
-    EncryptionEngine.decrypt(
-      blob,
-      master_key,
-      OpenSSLCrypto,           # Layer 1: AES-256-GCM
-      AegisCrypto,             # Layer 2: AEGIS-256
-      SchwaemmCrypto,          # Layer 3: Schwaemm256-256
-      DeoxysCrypto,            # Layer 4: Deoxys-II-256
-      AsconCrypto,             # Layer 5: Ascon-128a
-      ChaCha20Poly1305Crypto,  # Layer 6: ChaCha20-Poly1305
-      file_path
-    )
+    try do
+      EncryptionEngine.decrypt(
+        blob,
+        master_key,
+        OpenSSLCrypto,           # Layer 1: AES-256-GCM
+        AegisCrypto,             # Layer 2: AEGIS-256
+        SchwaemmCrypto,          # Layer 3: Schwaemm256-256
+        DeoxysCrypto,            # Layer 4: Deoxys-II-256
+        AsconCrypto,             # Layer 5: Ascon-128a
+        ChaCha20Poly1305Crypto,  # Layer 6: ChaCha20-Poly1305
+        file_path
+      )
+    rescue
+      e in UndefinedFunctionError ->
+        {:error, e}
+    end
   end
 
   @doc """
@@ -197,7 +213,7 @@ defmodule GitFoil.Adapters.GitFilter do
     # Handle IO read errors
     result = case input do
       {:error, reason} ->
-        {:error, "Failed to read input: #{inspect(reason)}"}
+        {:error, "Failed to read input: #{format_error(reason)}"}
 
       :eof ->
         # No input available (e.g., in tests with no stdin)
@@ -222,4 +238,13 @@ defmodule GitFoil.Adapters.GitFilter do
         {:error, 1}
     end
   end
+
+  # Format errors in a user-friendly way
+  defp format_error(%UndefinedFunctionError{module: module, function: function, arity: arity}) do
+    "#{module}.#{function}/#{arity} not available (NIF not loaded)"
+  end
+
+  defp format_error(error) when is_binary(error), do: error
+  defp format_error(error) when is_atom(error), do: Atom.to_string(error)
+  defp format_error(error), do: inspect(error)
 end

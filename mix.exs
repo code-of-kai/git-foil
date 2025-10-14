@@ -32,7 +32,12 @@ defmodule GitFoil.MixProject do
         ]
       ],
       # Escript for development testing
-      escript: [main_module: GitFoil.CLI, name: "git-foil"],
+      escript: [
+        main_module: GitFoil.CLI,
+        name: "git-foil",
+        embed_elixir: true,
+        strip_beams: false
+      ],
       # Test coverage
       test_coverage: [tool: ExCoveralls],
       preferred_cli_env: [

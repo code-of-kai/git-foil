@@ -132,9 +132,6 @@ defmodule GitFoil.Commands.Unencrypt do
 
     case answer do
       "yes" ->
-        # Immediately show feedback before the long pause
-        IO.puts("🔍  Analyzing repository...")
-        :io.format(~c"")  # Flush output immediately
         :ok
 
       _ ->
@@ -145,6 +142,9 @@ defmodule GitFoil.Commands.Unencrypt do
   end
 
   defp get_encrypted_files do
+    IO.puts("🔍  Analyzing repository...")
+    :io.format(~c"")  # Flush output immediately
+
     # Get list of files that have the gitfoil filter attribute
     # This must be called BEFORE removing .gitattributes
     # Only get tracked files - untracked files aren't in Git's index and don't need conversion
@@ -157,22 +157,43 @@ defmodule GitFoil.Commands.Unencrypt do
           |> String.split("\n", trim: true)
           |> Enum.reject(&(&1 == ""))
 
-        # Filter to only files that have the gitfoil filter attribute
-        # and are actually in the Git index
-        encrypted_files =
-          Enum.filter(tracked_files, fn file ->
-            case System.cmd("git", ["check-attr", "filter", file], stderr_to_stdout: true) do
-              {attr_output, 0} ->
-                String.contains?(attr_output, "filter: gitfoil")
+        total_files = length(tracked_files)
 
-              _ ->
-                false
-            end
-          end)
-          # Exclude .gitattributes - it's metadata, not encrypted content
-          |> Enum.reject(&(&1 == ".gitattributes"))
+        # Use batch check-attr for much faster processing (100 files at a time instead of 1)
+        # Show spinner during processing
+        spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
-        {:ok, encrypted_files}
+        case GitFoil.Infrastructure.Git.check_attr_batch("filter", tracked_files) do
+          {:ok, results} ->
+            # Process results in chunks of 100 to show activity with spinner
+            encrypted_files =
+              results
+              |> Enum.chunk_every(100)
+              |> Enum.with_index(0)
+              |> Enum.reduce([], fn {chunk, batch_num}, acc ->
+                # Show spinner frame that rotates with each batch
+                spinner = Enum.at(spinner_frames, rem(batch_num, length(spinner_frames)))
+                files_processed = min((batch_num + 1) * 100, total_files)
+                IO.write("\r\e[K   #{spinner} Checking #{total_files} files for encryption patterns... (#{files_processed}/#{total_files})")
+                :io.format(~c"")
+
+                # Filter this batch for encrypted files
+                batch_encrypted =
+                  chunk
+                  |> Enum.filter(fn {file, attr} ->
+                    attr == "gitfoil" and file != ".gitattributes"
+                  end)
+                  |> Enum.map(fn {file, _attr} -> file end)
+
+                acc ++ batch_encrypted
+              end)
+
+            IO.write("\r\e[K   ✓ Checked #{total_files} files for encryption patterns\n")
+            {:ok, encrypted_files}
+
+          {:error, reason} ->
+            {:error, "Failed to check file attributes: #{reason}"}
+        end
 
       {error, _} ->
         {:error, "Failed to list tracked files: #{String.trim(error)}"}
@@ -226,13 +247,21 @@ defmodule GitFoil.Commands.Unencrypt do
       # Remove from index, then re-add with disabled filters
       # This forces git to store the plaintext working directory version
       # Use -f to force removal even if there are staged/unstaged changes
-      with {_, 0} <- System.cmd("git", ["rm", "--cached", "-f", file], stderr_to_stdout: true),
-           {_, 0} <- System.cmd("git", ["add", file], stderr_to_stdout: true) do
-        {:cont, :ok}
-      else
+      case System.cmd("git", ["rm", "--cached", "-f", file], stderr_to_stdout: true) do
+        {_, 0} ->
+          # Use -f to force add even if file is in .gitignore
+          case System.cmd("git", ["add", "-f", file], stderr_to_stdout: true) do
+            {_, 0} ->
+              {:cont, :ok}
+
+            {error, _} ->
+              IO.write("\n")
+              {:halt, {:error, "Failed to process #{file}: #{String.trim(error)}"}}
+          end
+
         {error, _} ->
           IO.write("\n")
-          {:halt, {:error, "Failed to decrypt #{file}: #{String.trim(error)}"}}
+          {:halt, {:error, "Failed to remove #{file} from index: #{String.trim(error)}"}}
       end
     end)
     |> case do

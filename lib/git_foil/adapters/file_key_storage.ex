@@ -56,7 +56,7 @@ defmodule GitFoil.Adapters.FileKeyStorage do
          :ok <- set_secure_permissions(key_path) do
       :ok
     else
-      {:error, reason} -> {:error, "Failed to store keypair: #{inspect(reason)}"}
+      {:error, reason} -> {:error, "Failed to store keypair: #{GitFoil.Helpers.UIPrompts.format_error(reason)}"}
     end
   end
 
@@ -73,7 +73,7 @@ defmodule GitFoil.Adapters.FileKeyStorage do
         {:error, :not_found}
 
       {:error, reason} ->
-        {:error, "Failed to read keypair: #{inspect(reason)}"}
+        {:error, "Failed to read keypair: #{GitFoil.Helpers.UIPrompts.format_error(reason)}"}
     end
   end
 

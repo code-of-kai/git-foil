@@ -77,7 +77,7 @@ defmodule GitFoil.Adapters.PasswordProtectedKeyStorage do
         {:error, "Password must be less than 1024 characters"}
 
       {:error, reason} ->
-        {:error, "Failed to store encrypted keypair: #{inspect(reason)}"}
+        {:error, "Failed to store encrypted keypair: #{GitFoil.Helpers.UIPrompts.format_error(reason)}"}
     end
   end
 
@@ -113,7 +113,7 @@ defmodule GitFoil.Adapters.PasswordProtectedKeyStorage do
         {:error, :invalid_password}
 
       {:error, reason} ->
-        {:error, "Failed to read encrypted keypair: #{inspect(reason)}"}
+        {:error, "Failed to read encrypted keypair: #{GitFoil.Helpers.UIPrompts.format_error(reason)}"}
     end
   end
 

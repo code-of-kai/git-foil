@@ -56,6 +56,7 @@ defmodule GitFoil.Commands.Init do
          {:ok, encrypted} <- maybe_encrypt_files(pattern_status, opts) do
       {:ok, success_message(pattern_status, encrypted, opts)}
     else
+      {:ok, message} -> {:ok, message}
       {:error, reason} -> {:error, reason}
       :exited -> {:ok, ""}
     end
@@ -291,7 +292,7 @@ desktop.ini -filter
              git-foil help
         """
 
-        {:error, message}
+        {:ok, message}
 
       _ ->
         :ok
@@ -477,6 +478,7 @@ desktop.ini -filter
     case keypair_result do
       {:ok, _} ->
         IO.puts("✅  Generated quantum-resistant encryption keys")
+        IO.puts("")
 
         # Second step: Configure filters
         filter_result =
@@ -667,7 +669,7 @@ desktop.ini -filter
       {:error, reason} ->
         IO.puts("")
         IO.puts("⚠️   Warning: Could not check for files to encrypt.")
-        IO.puts("    Reason: #{inspect(reason)}")
+        IO.puts("    Reason: #{UIPrompts.format_error(reason)}")
         IO.puts("    Files will be encrypted as you add them with git add/commit.")
         IO.puts("")
         {:ok, false}
@@ -803,7 +805,6 @@ desktop.ini -filter
     repository = Keyword.get(opts, :repository, Git)
     use_password = Keyword.get(opts, :use_password, false)
     key_info = UIPrompts.master_key_info(repository: repository)
-    location_line = UIPrompts.master_key_location_line(repository: repository)
 
     # Determine key protection message
     protection_message =
@@ -822,9 +823,6 @@ desktop.ini -filter
        Enabled automatic encryption.
        Files will encrypt when you git add or git commit.
        Files will decrypt when you git checkout or git pull.
-
-    🔑  Your encryption key:
-    #{location_line}
     """
 
     pattern_message = get_pattern_message(pattern_status, encrypted)
@@ -905,11 +903,6 @@ desktop.ini -filter
     """
 
     🔒  Encryption is active! All files will be encrypted.
-
-    💡  Try it out:
-       echo "secret" > test.txt
-       git add test.txt        # Encrypts automatically
-       git commit -m "Test"
     """
   end
 
@@ -942,11 +935,6 @@ desktop.ini -filter
           • Secrets directory (secrets/**)
           • Key files (*.key, *.pem)
           • Credentials (credentials.json)
-
-    💡  Try it out:
-       echo "API_KEY=secret123" > .env
-       git add .env        # Encrypts automatically
-       git commit -m "Add secrets"
     """
   end
 
@@ -969,11 +957,6 @@ desktop.ini -filter
 
     🔒  Encryption is active!
        📋  Environment files will be encrypted (*.env, .env.*).
-
-    💡  Try it out:
-       echo "DATABASE_URL=postgresql://localhost" > .env.local
-       git add .env.local  # Encrypts automatically
-       git commit -m "Add config"
     """
   end
 
@@ -997,14 +980,6 @@ desktop.ini -filter
 
     🔒  Encryption is active!
        Custom patterns added to .gitattributes.
-       Git will encrypt matching files when you run 'git add' or 'git commit'.
-       Git will decrypt them when you run 'git checkout'.
-
-    💡  Try it out:
-       cat .gitattributes              # View your patterns
-       git add <matching-file>
-       git commit -m "Add encrypted file"
-       # Matching files will be encrypted automatically!
     """
   end
 

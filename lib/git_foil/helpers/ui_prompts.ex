@@ -7,7 +7,6 @@ defmodule GitFoil.Helpers.UIPrompts do
   cohesive user experience.
   """
 
-  import Bitwise, only: [band: 2]
   alias GitFoil.Infrastructure.Git
 
   @doc """
@@ -38,8 +37,21 @@ defmodule GitFoil.Helpers.UIPrompts do
   def format_error({:posix, reason}), do: format_error(reason)
   def format_error({:file_error, reason}), do: format_error(reason)
 
-  # Fallback for unknown errors - still show inspect but at least it's consistent
-  def format_error(reason), do: "#{inspect(reason)}"
+  # Handle exception structs
+  def format_error(%UndefinedFunctionError{module: module, function: function, arity: arity}) do
+    "#{module}.#{function}/#{arity} is not available"
+  end
+
+  def format_error(%{__exception__: true, message: message}) when is_binary(message) do
+    message
+  end
+
+  # Fallback for strings and atoms
+  def format_error(reason) when is_binary(reason), do: reason
+  def format_error(reason) when is_atom(reason), do: Atom.to_string(reason)
+
+  # Last resort for complex structures
+  def format_error(reason), do: "Unexpected error: #{inspect(reason)}"
 
   @doc """
   Prompts user to choose between using existing encryption key or creating a new one.
@@ -95,42 +107,27 @@ defmodule GitFoil.Helpers.UIPrompts do
           Path.expand(".git/git_foil/master.key")
       end
 
-    permissions =
-      case File.stat(path) do
-        {:ok, %File.Stat{mode: mode}} ->
-          mode
-          |> band(0o777)
-          |> Integer.to_string(8)
-          |> String.pad_leading(4, "0")
-
-        {:error, _} ->
-          nil
-      end
-
-    %{path: path, permissions: permissions}
+    %{path: path}
   end
 
   def master_key_prompt_line(opts \\ []) do
     info = master_key_info(opts)
-    "📍  Location: #{info.path}#{format_permissions_suffix(info.permissions)}"
+    "📍  Location: #{info.path}"
   end
 
   def master_key_location_line(opts \\ []) do
     info = master_key_info(opts)
-    "   Location: #{info.path}#{format_permissions_suffix(info.permissions)}"
+    "   Location: #{info.path}"
   end
 
   def master_key_summary(opts \\ []) do
     info = master_key_info(opts)
-    info.path <> format_permissions_suffix(info.permissions)
+    info.path
   end
 
   def master_key_path(opts \\ []) do
     master_key_info(opts).path
   end
-
-  defp format_permissions_suffix(nil), do: ""
-  defp format_permissions_suffix(perm), do: " (permissions: #{perm})"
 
   @doc """
   Formats a key backup confirmation message.
@@ -145,8 +142,6 @@ defmodule GitFoil.Helpers.UIPrompts do
     💡  Design decision:
        GitFoil never deletes encryption keys automatically.
        This preserves access to files encrypted with the old key.
-
-    🔄  Creating new encryption key...
     """
   end
 
