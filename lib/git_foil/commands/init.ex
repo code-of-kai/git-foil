@@ -33,7 +33,6 @@ defmodule GitFoil.Commands.Init do
   def run(opts \\ []) do
     force = Keyword.get(opts, :force, false)
     skip_patterns = Keyword.get(opts, :skip_patterns, false)
-    use_password = Keyword.get(opts, :password, false)
 
     # Dependency injection - defaults to real implementations
     repository = Keyword.get(opts, :repository, Git)
@@ -43,13 +42,13 @@ defmodule GitFoil.Commands.Init do
     opts =
       Keyword.merge(opts,
         repository: repository,
-        terminal: terminal,
-        use_password: use_password
+        terminal: terminal
       )
 
     with :ok <- verify_git_repository(opts),
          :ok <- check_already_fully_initialized(force, opts),
          {:ok, key_action} <- check_existing_initialization(force, opts),
+         {:ok, opts} <- ensure_password_choice(key_action, opts),
          :ok <- confirm_initialization(key_action, force, opts),
          :ok <- generate_keypair_and_configure_filters(key_action, opts),
          {:ok, pattern_status} <- maybe_configure_patterns(skip_patterns, opts),
@@ -193,11 +192,12 @@ defmodule GitFoil.Commands.Init do
     # These MUST come after ** pattern (Git applies last matching pattern)
     exclusions = """
 
-.gitattributes -filter
-.DS_Store -filter
-Thumbs.db -filter
-desktop.ini -filter
-"""
+    .gitattributes -filter
+    .DS_Store -filter
+    Thumbs.db -filter
+    desktop.ini -filter
+    """
+
     header <> pattern_lines <> exclusions
   end
 
@@ -399,9 +399,109 @@ desktop.ini -filter
     end
   end
 
+  defp ensure_password_choice(:generate_new, opts) do
+    terminal = Keyword.get(opts, :terminal, Terminal)
+
+    choice =
+      case Keyword.fetch(opts, :password) do
+        {:ok, value} ->
+          notify_password_selection(value, :flag)
+          value
+
+        :error ->
+          default =
+            if PasswordProtectedKeyStorage.initialized?() do
+              :password
+            else
+              :no_password
+            end
+
+          {:ok, selected} =
+            UIPrompts.prompt_password_protection(terminal: terminal, default: default)
+
+          notify_password_selection(selected, :prompt)
+          selected
+      end
+
+    if choice do
+      IO.puts("")
+      IO.puts("🔒  The master key will be encrypted with your password.")
+      IO.puts("    Input is hidden and you'll confirm it before continuing.")
+
+      case PasswordPrompt.get_password(
+             "Password for master key (input hidden): ",
+             confirm: true
+           ) do
+        {:ok, password} ->
+          IO.puts("")
+
+          {:ok,
+           opts
+           |> Keyword.put(:use_password, true)
+           |> Keyword.put(:password_value, password)}
+
+        {:error, :password_mismatch} ->
+          {:error, "Passwords do not match. Please run the command again."}
+
+        {:error, reason} ->
+          {:error, "Password prompt failed: #{PasswordPrompt.format_error(reason)}"}
+      end
+    else
+      {:ok, Keyword.put(opts, :use_password, false)}
+    end
+  end
+
+  defp ensure_password_choice(:use_existing, opts) do
+    use_password =
+      cond do
+        PasswordProtectedKeyStorage.initialized?() -> true
+        FileKeyStorage.initialized?() -> false
+        true -> Keyword.get(opts, :password, false)
+      end
+
+    {:ok, Keyword.put(opts, :use_password, use_password)}
+  end
+
+  defp notify_password_selection(true, source) do
+    message =
+      case source do
+        :flag -> "🔐  Password protection enabled (--password flag)."
+        :prompt -> "🔐  Password protection enabled."
+      end
+
+    IO.puts(message)
+  end
+
+  defp notify_password_selection(false, source) do
+    message =
+      case source do
+        :flag -> "🔓  Storing master key without password (--no-password flag)."
+        :prompt -> "🔓  Storing master key without password."
+      end
+
+    IO.puts(message)
+  end
+
   defp confirm_initialization(key_action, force, opts) do
     terminal = Keyword.get(opts, :terminal, Terminal)
     repository = Keyword.get(opts, :repository, Git)
+    use_password = Keyword.get(opts, :use_password, false)
+    plaintext_path = UIPrompts.master_key_info(repository: repository).path
+    encrypted_path = encrypted_key_path(repository)
+
+    {existing_location_line, new_storage_line} =
+      if use_password do
+        {
+          "      → Encrypted key located at #{encrypted_path}",
+          "      → Stored encrypted in #{encrypted_path} (password required)"
+        }
+      else
+        {
+          "      → Located at #{plaintext_path}",
+          "      → Stored in #{plaintext_path}"
+        }
+      end
+
     IO.puts("")
     IO.puts("🔐  GitFoil Initialization")
     IO.puts("")
@@ -414,15 +514,16 @@ desktop.ini -filter
         IO.puts("   🔑  Generate new encryption keys (--force flag)")
         IO.puts("      → Creates quantum-resistant keypair (Kyber1024)")
         IO.puts("      → Old key will be backed up automatically")
+        IO.puts(new_storage_line)
 
       :generate_new ->
         IO.puts("   🔑  Generate encryption keys")
         IO.puts("      → Creates quantum-resistant keypair (Kyber1024)")
-        IO.puts("      → Stored securely in .git/git_foil/master.key")
+        IO.puts(new_storage_line)
 
       :use_existing ->
         IO.puts("   🔑  Use existing encryption key")
-        IO.puts("      → Located at .git/git_foil/master.key")
+        IO.puts(existing_location_line)
     end
 
     IO.puts("")
@@ -504,13 +605,28 @@ desktop.ini -filter
   defp do_generate_keypair(min_duration, opts) do
     start_time = System.monotonic_time(:millisecond)
     use_password = Keyword.get(opts, :use_password, false)
+    provided_password = Keyword.get(opts, :password_value)
 
     result =
       if use_password do
-        # Password protection requested - prompt for password
-        case PasswordPrompt.get_password("Enter password for master key: ", confirm: true) do
-          {:ok, password} ->
-            case KeyManager.init_with_password(password) do
+        password =
+          case provided_password do
+            nil ->
+              case PasswordPrompt.get_password(
+                     "Password for master key (input hidden): ",
+                     confirm: true
+                   ) do
+                {:ok, pwd} -> {:ok, pwd}
+                {:error, reason} -> {:error, reason}
+              end
+
+            value ->
+              {:ok, value}
+          end
+
+        case password do
+          {:ok, pwd} ->
+            case KeyManager.init_with_password(pwd) do
               {:ok, keypair} ->
                 {:ok, keypair}
 
@@ -519,7 +635,7 @@ desktop.ini -filter
             end
 
           {:error, :password_mismatch} ->
-            {:error, "Passwords do not match. Please try again."}
+            {:error, "Passwords do not match. Please run the command again."}
 
           {:error, reason} ->
             {:error, "Password prompt failed: #{PasswordPrompt.format_error(reason)}"}
@@ -805,11 +921,16 @@ desktop.ini -filter
     repository = Keyword.get(opts, :repository, Git)
     use_password = Keyword.get(opts, :use_password, false)
     key_info = UIPrompts.master_key_info(repository: repository)
+    encrypted_key_path = encrypted_key_path(repository)
 
     # Determine key protection message
     protection_message =
       if use_password do
-        "       Protected with password encryption (PBKDF2 + AES-256-GCM)."
+        """
+        Protected with password encryption (PBKDF2 + AES-256-GCM).
+        Encrypted master key stored at:
+        #{encrypted_key_path}
+        """
       else
         ""
       end
@@ -836,8 +957,8 @@ desktop.ini -filter
            Without the password, you cannot decrypt your files.
            There is NO password recovery mechanism.
 
-           Your encrypted key is stored here:
-           #{key_info.path}
+           Encrypted key stored here:
+           #{encrypted_key_path}
         """
       else
         """
@@ -855,6 +976,13 @@ desktop.ini -filter
       end
 
     base_config <> pattern_message <> warning
+  end
+
+  defp encrypted_key_path(repository) do
+    case repository.repository_root() do
+      {:ok, root} -> Path.join([root, ".git", "git_foil", "master.key.enc"])
+      {:error, _} -> Path.expand(".git/git_foil/master.key.enc")
+    end
   end
 
   defp get_pattern_message(:decided_later, _encrypted) do

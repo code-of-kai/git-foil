@@ -41,4 +41,5 @@ git-foil
 test_secret.env
 
 # Local development scripts (machine-specific paths)
+bin/
 scripts/run-tests-local.sh

@@ -1,64 +1,24 @@
 # GitFoil Installation Guide
 
-GitFoil uses native cryptographic libraries (Rust NIFs and post-quantum C implementations) that must be compiled for your system. Choose one of the installation methods below.
+GitFoil uses native cryptographic libraries (Rust NIFs and post-quantum C implementations) that must be compiled for your system.
 
-## Method 1: Homebrew (Recommended for macOS)
+## Installation
 
-Homebrew will automatically handle all dependencies and compilation:
+**macOS (Homebrew):**
 
 ```bash
-# Add the GitFoil tap
-brew tap code-of-kai/gitfoil
-
-# Install git-foil
-brew install git-foil
-
-# Verify installation
-git-foil --version
+brew install code-of-kai/gitfoil/git-foil
 ```
 
-## Method 2: Source Installation
+Homebrew automatically handles all dependencies and compilation.
 
-If you don't use Homebrew, you can install from source. This requires Elixir and Rust to be installed first.
+**Other platforms:**
 
-### Prerequisites
+GitFoil is currently distributed via Homebrew for macOS. For other platforms, you'll need to build from source (requires Elixir 1.18+ and Rust). See the project repository for build instructions.
 
-- **Elixir** 1.18+ (includes Erlang/OTP 28+)
-- **Rust** (for compiling native crypto libraries)
-- **Git** 2.x+
+## Verify Installation
 
 ```bash
-# macOS (without Homebrew)
-# Install via asdf or from https://elixir-lang.org/install.html
-asdf install elixir 1.18.4
-asdf install rust latest
-
-# Ubuntu/Debian
-sudo apt-get install elixir erlang rust-all
-
-# Arch Linux
-sudo pacman -S elixir rust
-```
-
-### Install from Source
-
-```bash
-# Clone the repository
-git clone https://github.com/code-of-kai/git-foil.git
-cd git-foil
-
-# Install dependencies and compile
-mix deps.get
-MIX_ENV=prod mix compile
-
-# Build escript
-MIX_ENV=prod mix escript.build
-
-# Install to system
-sudo cp git-foil /usr/local/bin/git-foil
-sudo chmod +x /usr/local/bin/git-foil
-
-# Verify installation
 git-foil --version
 ```
 
@@ -71,40 +31,18 @@ cd my-project
 # Initialize GitFoil
 git-foil init
 
-# Add encryption patterns
-git-foil add-pattern "*.env"
-git-foil add-pattern "config/secrets.yml"
-
-# Files matching these patterns will now be automatically encrypted when committed
-```
-
-## Troubleshooting
-
-### "pqclean_nif is not available" Error
-
-This means the NIFs didn't compile. Run:
-
-```bash
-mix deps.compile pqclean --force
-mix deps.compile rustler --force
-```
-
-### "Function not available" Errors
-
-Make sure you compiled with `MIX_ENV=prod`:
-
-```bash
-MIX_ENV=prod mix compile
-MIX_ENV=prod mix escript.build
+# Follow the interactive prompts to select which files to encrypt
 ```
 
 ## Uninstallation
 
+**Remove from system:**
+
 ```bash
-sudo rm /usr/local/bin/git-foil
+brew uninstall git-foil
 ```
 
-To remove GitFoil from a repository:
+**Remove from a repository:**
 
 ```bash
 git-foil unencrypt  # Decrypt all files

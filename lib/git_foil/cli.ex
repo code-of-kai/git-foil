@@ -110,6 +110,8 @@ defmodule GitFoil.CLI do
       "-f", acc -> [{:force, true} | acc]
       "--skip-gitattributes", acc -> [{:skip_gitattributes, true} | acc]
       "--keep-key", acc -> [{:keep_key, true} | acc]
+      "--password", acc -> [{:password, true} | acc]
+      "--no-password", acc -> [{:password, false} | acc]
       _, acc -> acc
     end)
   end
@@ -213,6 +215,7 @@ defmodule GitFoil.CLI do
     if output != "" do
       IO.puts(output)
     end
+
     System.halt(0)
   end
 

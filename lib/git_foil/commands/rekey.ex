@@ -9,7 +9,11 @@ defmodule GitFoil.Commands.Rekey do
   Both operations re-encrypt all tracked files by forcing Git to re-run the clean filter.
   """
 
+  alias GitFoil.Adapters.{FileKeyStorage, PasswordProtectedKeyStorage}
+  alias GitFoil.CLI.PasswordPrompt
+  alias GitFoil.Core.KeyManager
   alias GitFoil.Helpers.{FileEncryption, UIPrompts}
+  alias GitFoil.Infrastructure.Terminal
 
   @doc """
   Rekey the repository by removing files from the index and re-adding them.
@@ -22,11 +26,13 @@ defmodule GitFoil.Commands.Rekey do
     IO.puts("")
 
     force = Keyword.get(opts, :force, false)
+    terminal = Keyword.get(opts, :terminal, Terminal)
+    opts = Keyword.put(opts, :terminal, terminal)
 
     with :ok <- verify_git_repository(),
          :ok <- verify_gitfoil_initialized(),
-         key_action <- check_key_and_prompt(force),
-         :ok <- maybe_generate_new_key(key_action),
+         key_action <- check_key_and_prompt(force, opts),
+         :ok <- maybe_generate_new_key(key_action, opts),
          :ok <- remove_from_index(),
          :ok <- re_add_files() do
       {:ok, success_message(key_action)}
@@ -46,24 +52,26 @@ defmodule GitFoil.Commands.Rekey do
   end
 
   defp verify_gitfoil_initialized do
-    if File.exists?(".git/git_foil/master.key") do
+    if FileKeyStorage.initialized?() or PasswordProtectedKeyStorage.initialized?() do
       :ok
     else
       {:error, "GitFoil not initialized. Run 'git-foil init' first."}
     end
   end
 
-  defp check_key_and_prompt(force) do
+  defp check_key_and_prompt(force, opts) do
     if force do
       IO.puts("⚠️     Creating new encryption key (--force flag)\n")
       {:generate_new}
     else
-      prompt_key_choice()
+      prompt_key_choice(opts)
     end
   end
 
-  defp prompt_key_choice do
-    case UIPrompts.prompt_key_choice(purpose: "rekey repository") do
+  defp prompt_key_choice(opts) do
+    terminal = Keyword.get(opts, :terminal, Terminal)
+
+    case UIPrompts.prompt_key_choice(purpose: "rekey repository", terminal: terminal) do
       {:use_existing} ->
         IO.puts("\n✅  Using existing encryption key\n")
         {:use_existing}
@@ -75,9 +83,10 @@ defmodule GitFoil.Commands.Rekey do
             {:generate_new}
 
           {:error, reason} ->
-            {:error, UIPrompts.format_error_message(
-              "Failed to backup existing key: #{UIPrompts.format_error(reason)}"
-            )}
+            {:error,
+             UIPrompts.format_error_message(
+               "Failed to backup existing key: #{UIPrompts.format_error(reason)}"
+             )}
         end
 
       {:invalid, _message} ->
@@ -87,15 +96,17 @@ defmodule GitFoil.Commands.Rekey do
   end
 
   defp backup_existing_key do
-    timestamp = DateTime.utc_now()
-                |> DateTime.to_iso8601()
-                |> String.replace(":", "-")
-                |> String.replace(".", "-")
+    timestamp =
+      DateTime.utc_now()
+      |> DateTime.to_iso8601()
+      |> String.replace(":", "-")
+      |> String.replace(".", "-")
 
-    backup_filename = "master.key.backup.#{timestamp}"
+    {source_path, backup_prefix} = current_key_paths()
+    backup_filename = "#{backup_prefix}.backup.#{timestamp}"
     backup_path = ".git/git_foil/#{backup_filename}"
 
-    case File.rename(".git/git_foil/master.key", backup_path) do
+    case File.rename(source_path, backup_path) do
       :ok ->
         {:ok, backup_path}
 
@@ -104,19 +115,81 @@ defmodule GitFoil.Commands.Rekey do
     end
   end
 
-  defp maybe_generate_new_key({:use_existing}), do: :ok
-  defp maybe_generate_new_key({:generate_new}) do
-    alias GitFoil.Adapters.FileKeyStorage
+  defp maybe_generate_new_key({:use_existing}, _opts), do: :ok
 
-    with {:ok, keypair} <- FileKeyStorage.generate_keypair(),
-         :ok <- FileKeyStorage.store_keypair(keypair) do
-      :ok
+  defp maybe_generate_new_key({:generate_new}, opts) do
+    terminal = Keyword.get(opts, :terminal, Terminal)
+
+    choice =
+      case Keyword.fetch(opts, :password) do
+        {:ok, value} ->
+          notify_password_selection(value, :flag)
+          value
+
+        :error ->
+          default =
+            if PasswordProtectedKeyStorage.initialized?() do
+              :password
+            else
+              :no_password
+            end
+
+          {:ok, selected} =
+            UIPrompts.prompt_password_protection(terminal: terminal, default: default)
+
+          notify_password_selection(selected, :prompt)
+          selected
+      end
+
+    if choice do
+      case PasswordPrompt.get_password("Enter password for new key: ", confirm: true) do
+        {:ok, password} ->
+          case KeyManager.init_with_password(password) do
+            {:ok, _keypair} ->
+              :ok
+
+            {:error, reason} ->
+              {:error, "Failed to generate keypair: #{UIPrompts.format_error(reason)}"}
+          end
+
+        {:error, :password_mismatch} ->
+          {:error, "Passwords do not match. Please try again."}
+
+        {:error, reason} ->
+          {:error, "Password prompt failed: #{PasswordPrompt.format_error(reason)}"}
+      end
     else
-      {:error, reason} ->
-        {:error, "Failed to generate keypair: #{UIPrompts.format_error(reason)}"}
+      case KeyManager.init_without_password() do
+        {:ok, _keypair} ->
+          :ok
+
+        {:error, reason} ->
+          {:error, "Failed to generate keypair: #{UIPrompts.format_error(reason)}"}
+      end
     end
   end
-  defp maybe_generate_new_key({:error, reason}), do: {:error, reason}
+
+  defp maybe_generate_new_key({:error, reason}, _opts), do: {:error, reason}
+
+  defp notify_password_selection(true, source) do
+    message =
+      case source do
+        :flag -> "🔐  Password protection enabled (--password flag)."
+        :prompt -> "🔐  Password protection enabled."
+      end
+
+    IO.puts(message)
+  end
+
+  defp notify_password_selection(false, source) do
+    message =
+      case source do
+        :flag -> "🔓  Storing master key without password (--no-password flag)."
+        :prompt -> "🔓  Storing master key without password."
+      end
+
+    IO.puts(message)
+  end
 
   defp remove_from_index do
     IO.puts("⚙️     Removing files from Git index...")
@@ -138,19 +211,26 @@ defmodule GitFoil.Commands.Rekey do
   defp re_add_files do
     # Get both tracked (now deleted from index) and untracked files
     # Tracked files were deleted by git rm --cached, so use git diff
-    deleted_result = System.cmd("git", ["diff", "--name-only", "--cached", "--diff-filter=D"], stderr_to_stdout: true)
+    deleted_result =
+      System.cmd("git", ["diff", "--name-only", "--cached", "--diff-filter=D"],
+        stderr_to_stdout: true
+      )
+
     # Untracked files that might now match encryption patterns
-    untracked_result = System.cmd("git", ["ls-files", "--others", "--exclude-standard"], stderr_to_stdout: true)
+    untracked_result =
+      System.cmd("git", ["ls-files", "--others", "--exclude-standard"], stderr_to_stdout: true)
 
     case {deleted_result, untracked_result} do
       {{deleted_output, 0}, {untracked_output, 0}} ->
-        deleted_files = deleted_output
-                       |> String.split("\n", trim: true)
-                       |> Enum.reject(&(&1 == ""))
+        deleted_files =
+          deleted_output
+          |> String.split("\n", trim: true)
+          |> Enum.reject(&(&1 == ""))
 
-        untracked_files = untracked_output
-                         |> String.split("\n", trim: true)
-                         |> Enum.reject(&(&1 == ""))
+        untracked_files =
+          untracked_output
+          |> String.split("\n", trim: true)
+          |> Enum.reject(&(&1 == ""))
 
         all_files = (deleted_files ++ untracked_files) |> Enum.uniq()
         total = length(all_files)
@@ -175,29 +255,32 @@ defmodule GitFoil.Commands.Rekey do
   end
 
   defp success_message(key_action) do
-    key_info = case key_action do
-      {:use_existing} -> "Used existing encryption key (.git/git_foil/master.key)"
-      {:generate_new} -> "Generated new encryption key (.git/git_foil/master.key)\n       Old key backed up with timestamp."
-      _ -> "Used encryption key (.git/git_foil/master.key)"
-    end
+    storage = current_storage_details()
 
-    key_rotation_note = case key_action do
-      {:generate_new} -> """
+    key_info =
+      case key_action do
+        {:use_existing} ->
+          "Used existing encryption key.\n       #{storage.description}"
 
-    ⚠️  IMPORTANT - New keys generated:
-       All team members need the NEW key file to decrypt files.
-       Share the new .git/git_foil/master.key securely with your team.
-       Old keys will no longer work after you push these changes.
-"""
-      _ -> ""
-    end
+        {:generate_new} ->
+          "Generated new encryption key.\n       #{storage.description}\n       Old key backed up with timestamp."
+
+        _ ->
+          "Used encryption key.\n       #{storage.description}"
+      end
+
+    key_rotation_note =
+      case key_action do
+        {:generate_new} -> storage.share_hint
+        _ -> ""
+      end
 
     """
     ✅  Rekey complete!
 
     📋  #{key_info}
        Files rekeyed and now match your current .gitattributes patterns.
-#{key_rotation_note}
+    #{key_rotation_note}
     💡  Next step - commit the changes:
        git-foil commit
 
@@ -207,5 +290,50 @@ defmodule GitFoil.Commands.Rekey do
     """
   end
 
-  # Safe wrapper for IO.gets that handles EOF from piped input
+  defp current_storage_details do
+    cond do
+      PasswordProtectedKeyStorage.initialized?() ->
+        %{
+          description:
+            "Encrypted key stored at .git/git_foil/master.key.enc (password required).",
+          share_hint: """
+
+              ⚠️  IMPORTANT - New keys generated:
+                 All team members need the NEW encrypted key (.git/git_foil/master.key.enc)
+                 and the password to decrypt files.
+                 Share both securely with your team.
+          """
+        }
+
+      FileKeyStorage.initialized?() ->
+        %{
+          description: "Key stored at .git/git_foil/master.key.",
+          share_hint: """
+
+              ⚠️  IMPORTANT - New keys generated:
+                 All team members need the NEW key file (.git/git_foil/master.key) to decrypt files.
+                 Share it securely with your team.
+          """
+        }
+
+      true ->
+        %{
+          description: "Key stored in .git/git_foil/.",
+          share_hint: ""
+        }
+    end
+  end
+
+  defp current_key_paths do
+    cond do
+      File.exists?(".git/git_foil/master.key.enc") ->
+        {".git/git_foil/master.key.enc", "master.key.enc"}
+
+      File.exists?(".git/git_foil/master.key") ->
+        {".git/git_foil/master.key", "master.key"}
+
+      true ->
+        {".git/git_foil/master.key", "master.key"}
+    end
+  end
 end

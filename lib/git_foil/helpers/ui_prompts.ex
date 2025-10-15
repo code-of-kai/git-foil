@@ -7,6 +7,7 @@ defmodule GitFoil.Helpers.UIPrompts do
   cohesive user experience.
   """
 
+  alias GitFoil.Adapters.Terminal
   alias GitFoil.Infrastructure.Git
 
   @doc """
@@ -67,7 +68,7 @@ defmodule GitFoil.Helpers.UIPrompts do
   - `:purpose` - What the key will be used for (default: "encrypt files")
   """
   def prompt_key_choice(opts \\ []) do
-    terminal = Keyword.get(opts, :terminal, GitFoil.Adapters.Terminal)
+    terminal = Keyword.get(opts, :terminal, Terminal)
     purpose = Keyword.get(opts, :purpose, "encrypt files")
 
     IO.puts("🔑  Existing encryption key found!")
@@ -95,16 +96,79 @@ defmodule GitFoil.Helpers.UIPrompts do
     end
   end
 
+  @doc """
+  Prompts the user to decide whether the master key should be stored
+  encrypted with a password or in plaintext on disk.
+
+  Returns `{:ok, true}` when the user chooses password protection,
+  `{:ok, false}` otherwise.
+
+  ## Options
+
+    * `:terminal` - Terminal adapter to use (default: GitFoil.Adapters.Terminal)
+    * `:default`  - `:password` or `:no_password` (default selection when user presses Enter)
+  """
+  def prompt_password_protection(opts \\ []) do
+    terminal = Keyword.get(opts, :terminal, Terminal)
+    default = Keyword.get(opts, :default, :no_password)
+
+    IO.puts("🔐  Protect your master key with a password?")
+    IO.puts("")
+    IO.puts("   YES → Stores the key encrypted on disk.")
+    IO.puts("          Requires the password to unlock the repository.")
+    IO.puts("   NO  → Stores the key in plaintext (.git/git_foil/master.key).")
+    IO.puts("          Anyone with that file can decrypt your history.")
+    IO.puts("")
+
+    prompt_password_protection_loop(terminal, default)
+  end
+
+  defp prompt_password_protection_loop(terminal, default) do
+    prompt_label = if default == :password, do: "[Y/n]: ", else: "[y/N]: "
+
+    answer =
+      terminal.safe_gets("Encrypt the master key with a password? #{prompt_label}")
+      |> String.trim()
+      |> String.downcase()
+
+    case answer do
+      "" ->
+        {:ok, default == :password}
+
+      "y" ->
+        {:ok, true}
+
+      "yes" ->
+        {:ok, true}
+
+      "n" ->
+        {:ok, false}
+
+      "no" ->
+        {:ok, false}
+
+      _ ->
+        IO.puts("Please enter y or n.")
+        prompt_password_protection_loop(terminal, default)
+    end
+  end
+
   def master_key_info(opts \\ []) do
     repository = Keyword.get(opts, :repository, Git)
 
-    path =
+    base_dir =
       case repository.repository_root() do
-        {:ok, root} ->
-          Path.join([root, ".git", "git_foil", "master.key"])
+        {:ok, root} -> Path.join([root, ".git", "git_foil"])
+        {:error, _} -> Path.expand(".git/git_foil")
+      end
 
-        {:error, _} ->
-          Path.expand(".git/git_foil/master.key")
+    encrypted = Path.join(base_dir, "master.key.enc")
+    plaintext = Path.join(base_dir, "master.key")
+
+    path =
+      cond do
+        File.exists?(encrypted) -> encrypted
+        true -> plaintext
       end
 
     %{path: path}
