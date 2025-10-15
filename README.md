@@ -294,43 +294,27 @@ Share the new `.git/git_foil/master.key` file with remaining team members. The d
 
 Got a new laptop? Here's what to do:
 
-### 1. Back Up Your Key (On Old Machine)
-
 ```bash
-cd /path/to/repo
-cp .git/git_foil/master.key ~/master-key-backup.bin
-
-# Store it securely:
-# - Encrypted USB drive
-# - Password manager (as secure file attachment)
-# - GPG-encrypted: gpg --encrypt --recipient your@email.com master-key-backup.bin
-```
-
-**DO NOT:**
-- ❌ Email the key unencrypted
-- ❌ Commit it to the repository
-- ❌ Store it in plaintext on cloud storage
-
-### 2. Setup on New Machine
-
-```bash
-# Clone the repo
+# 1. Clone the repo
 git clone https://github.com/your-org/your-repo.git
 cd your-repo
 
-# Restore your key
+# 2. Get your master key from your password manager
+# Download the master.key file you stored earlier
+
+# 3. Place it in the repo
 mkdir -p .git/git_foil
-cp ~/master-key-backup.bin .git/git_foil/master.key
+cp ~/Downloads/master.key .git/git_foil/master.key
 chmod 600 .git/git_foil/master.key
 
-# Initialize GitFoil (detects existing key, configures filters)
+# 4. Initialize GitFoil (detects existing key, configures filters)
 git-foil init
 
-# Refresh working directory
+# 5. Decrypt your files
 git reset --hard HEAD
 ```
 
-Your encrypted files decrypt and appear as plain text.
+**If you don't have the key in your password manager:** You'll need to copy it from your old machine first. The key is located at `.git/git_foil/master.key` in any repo where GitFoil is initialized.
 
 ---
 
