@@ -561,7 +561,7 @@ Built on the shoulders of giants:
 - Ascon-128a: NIST LWC winner (2023)
 - ChaCha20-Poly1305: Bernstein, IETF RFC 8439
 
-All algorithms are competition winners or international standards. We didn't just pick random papers. We just picked more of them than necessary.
+All algorithms are competition winners or international standards. We didn't just pick random papers. We just picked more of them than strictly necessary.
 
 ---
 
