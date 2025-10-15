@@ -420,13 +420,6 @@ Built in Elixir with **Rust NIFs** for the actual crypto.
 
 Yes, even with six layers. Turns out when you're neurotic about security, you're also neurotic about performance.
 
-**Features:**
-- Automatic CPU core detection
-- Parallel encryption during `git add`
-- Progress bars for large repos
-- Intelligent batching with back-pressure
-- Retry logic for Git lock contention
-
 You won't notice it happening. Which is exactly the point.
 
 ---
@@ -439,8 +432,8 @@ Yes. Started as two layers. Ended as six. These things happen.
 **Does this protect against GitHub employees reading my code?**
 Yes. They see ciphertext. Six layers of ciphertext. Useless without your master key file.
 
-**What about laptop theft?**
-GitFoil doesn't protect against that. Your `master.key` file is unencrypted on disk by default (like SSH keys). Use full disk encryption (FileVault, BitLocker, LUKS) to protect local data and keys. Or use `--password` flag for encrypted key storage.
+**What if my laptop is stolen?**
+If you used password protection during init (recommended), your master key is encrypted and useless to the thief without your password. If you chose plaintext key storage, the key is protected only by filesystem permissions—use full disk encryption (FileVault, BitLocker, LUKS) to protect local data.
 
 **What if I lose my master key?**
 Your encrypted data in Git is unrecoverable. But your working directory files are still there, unencrypted, on your computer. They're just regular files.
@@ -454,7 +447,6 @@ You can:
 **But don't rely on this.** Back up your `master.key` file properly:
 - Store it in a password manager (1Password, Bitwarden)
 - Keep an encrypted backup (GPG-encrypted on USB drive)
-- Treat it like SSH private keys
 
 **Will quantum computers break this?**
 Not with current or near-future technology. You'd need 2^704 operations. That's more than the number of atoms in the observable universe.
@@ -469,14 +461,14 @@ It's actually secure! All six algorithms are competition winners or standards. T
 GitFoil is for people with trust issues. If you're okay storing your master key with GitHub and trusting Microsoft with your secrets, use [git-crypt](https://github.com/AGWA/git-crypt) instead—it's excellent and better suited for CI/CD workflows.
 
 **Why Elixir?**
-Because it's good at concurrent processing. The crypto happens in Rust NIFs anyway.
+Because Elixir is a great language. The crypto happens in Rust NIFs anyway.
 
 **Can teams use this?**
 Yes! One person generates the master key, then shares the `master.key` file securely with team members. See the Team Usage section above.
 
 **Should I actually use this?**
 - If you have secrets in your repo: **absolutely**
-- If it's a public open-source project: **probably not**
+- If your repo is a public open-source project: **probably not**
 - If you just like the idea of six layers: **go for it, it's fun**
 
 ---
@@ -489,7 +481,7 @@ Yes! One person generates the master key, then shares the `master.key` file secu
 | AES-256 | ✅ (plus 5 others) | ✅ |
 | Key size | 1,408-bit | 256-bit |
 | Quantum resistance | 704-bit | 128-bit |
-| Origin story | Neurosis about 128-bit keys | Rational design |
+| Origin story | Paranoid temperament | Rational design |
 | Absurdity | High | Low |
 | Actually works | ✅ | ✅ |
 
@@ -507,7 +499,6 @@ Before using in high-stakes environments:
 
 ### Known Limitations
 
-- Master key stored unencrypted on disk by default (like SSH keys—use full disk encryption or `--password` flag)
 - Shared key model (can't revoke individual users without rekeying)
 - No key rotation without re-encrypting entire repo
 - No per-user audit trail
