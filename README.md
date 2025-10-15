@@ -418,8 +418,8 @@ All algorithms are competition winners or IETF/NIST standards.
 Built in Elixir with **Rust NIFs** for the actual crypto.
 
 **On a laptop:**
-- Encrypt 1,000 files: ~2 seconds
-- Decrypt 1,000 files: ~2 seconds
+- Encrypt 1,000 files: ~5 seconds
+- Decrypt 1,000 files: ~5 seconds
 - Throughput: ~100-200 MB/s per file
 
 Yes, even with six layers. Turns out when you're neurotic about security, you're also neurotic about performance.
