@@ -1,6 +1,11 @@
-# GitFoil - Quantum-resistant Git encryption
-** filter=gitfoil
-.gitattributes -filter
-.DS_Store -filter
-Thumbs.db -filter
-desktop.ini -filter
+# Exclude dependencies from GitHub language statistics
+deps/** linguist-vendored
+native/*/target/** linguist-vendored
+
+# Exclude build artifacts
+_build/** linguist-generated
+burrito_out/** linguist-generated
+
+# Exclude documentation from statistics
+docs/** linguist-documentation
+*.md linguist-documentation
