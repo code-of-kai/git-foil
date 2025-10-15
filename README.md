@@ -595,5 +595,5 @@ Does it work? **Yes.**
 
 ## Set it up once. Then forget it exists.
 
-*Six layers. Zero extra steps. Paranoia minimized.*
-*Your files stay readable. Your repo stays encrypted. You can finally sleep at night.*
+*Six layers. Zero extra steps.*
+*Your files stay readable. Your repo stays encrypted. Paranoia minimized. You can finally sleep at night.*
