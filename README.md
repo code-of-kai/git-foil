@@ -407,11 +407,7 @@ All algorithms are competition winners or IETF/NIST standards.
 
 ### Security Limitations
 
-- ⚠️  **Master key storage** - By default, `.git/git_foil/master.key` is stored as plaintext binary on disk, protected only by filesystem permissions (0600). Use `git-foil init --password` for additional encryption.
-
 - ⚠️  **Shared key model** - All team members use the same master key file. Can't revoke individual access without re-keying the entire repository.
-
-**Security Model:** GitFoil's security model is similar to SSH keys—unencrypted files protected by filesystem permissions (or optionally password-encrypted). Full disk encryption is recommended for comprehensive local security.
 
 ### Performance
 
