@@ -194,36 +194,9 @@ Choose your preset or create custom patterns. You can always change this later.
 
 ### Password Protection
 
-During initialization, GitFoil will ask:
+During initialization, you'll be asked whether to encrypt the master key with a password. Choose based on your security needs.
 
-```
-🔐  Protect your master key with a password?
-
-   YES → Stores the key encrypted on disk.
-         Requires the password to unlock the repository.
-   NO  → Stores the key in plaintext (.git/git_foil/master.key).
-         Anyone with that file can decrypt your history.
-
-Encrypt the master key with a password? [y/N]:
-```
-
-**With password protection (YES):**
-- Master key encrypted with PBKDF2 (600K iterations) + AES-256-GCM
-- Stored in `.git/git_foil/master.key.enc`
-- Requires password to decrypt files
-
-**Without password protection (NO):**
-- Master key stored in plaintext in `.git/git_foil/master.key`
-- Protected only by filesystem permissions (like SSH keys)
-- No password needed to decrypt files
-
-**When to use password protection:**
-- ✅ Laptop travels frequently
-- ✅ Highly sensitive projects
-- ✅ Shared workstations
-- ✅ Compliance requirements
-
-**Note:** You can bypass the prompt with `git-foil init --password` or `git-foil init --no-password` flags.
+**Best practice:** Store both your master key file AND your password in your password manager (1Password, Bitwarden, etc.) as secure file attachments. This keeps them backed up and accessible across machines.
 
 ### What Just Happened?
 
