@@ -396,20 +396,20 @@ All algorithms are competition winners or IETF/NIST standards.
 
 ### Security Properties
 
-✅ Deterministic encryption (same file → same ciphertext, for Git compatibility)
-✅ Authenticated encryption (tampering detection on all layers)
-✅ Algorithm diversity (six different mathematical approaches)
-✅ Competition-vetted (every algorithm won something)
-✅ No-feedback property (breaking N-1 layers reveals nothing)
-✅ Quantum-resistant (Kyber1024 keypair + two post-quantum algorithms)
-✅ Side-channel resistant (constant-time Rust implementations)
-✅ File isolation (per-file key derivation prevents cross-file attacks)
+- ✅  Deterministic encryption (same file → same ciphertext, for Git compatibility)
+- ✅  Authenticated encryption (tampering detection on all layers)
+- ✅  Algorithm diversity (six different mathematical approaches)
+- ✅  Competition-vetted (every algorithm won something)
+- ✅  No-feedback property (breaking N-1 layers reveals nothing)
+- ✅  Quantum-resistant (Kyber1024 keypair + two post-quantum algorithms)
+- ✅  Side-channel resistant (constant-time Rust implementations)
+- ✅  File isolation (per-file key derivation prevents cross-file attacks)
 
 ### Security Limitations
 
-⚠️ **Master key storage** - By default, `.git/git_foil/master.key` is stored as plaintext binary on disk, protected only by filesystem permissions (0600). Use `git-foil init --password` for additional encryption.
+- ⚠️  **Master key storage** - By default, `.git/git_foil/master.key` is stored as plaintext binary on disk, protected only by filesystem permissions (0600). Use `git-foil init --password` for additional encryption.
 
-⚠️ **Shared key model** - All team members use the same master key file. Can't revoke individual access without re-keying the entire repository.
+- ⚠️  **Shared key model** - All team members use the same master key file. Can't revoke individual access without re-keying the entire repository.
 
 **Security Model:** GitFoil's security model is similar to SSH keys—unencrypted files protected by filesystem permissions (or optionally password-encrypted). Full disk encryption is recommended for comprehensive local security.
 
