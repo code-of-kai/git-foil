@@ -4,10 +4,11 @@ defmodule GitFoil.MixProject do
   def project do
     [
       app: :git_foil,
-      version: "0.8.0",
+      version: "0.8.1",
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      aliases: aliases(),
       # Rustler NIF compilation
       rustler_crates: [
         ascon_nif: [
@@ -31,6 +32,7 @@ defmodule GitFoil.MixProject do
           mode: rustc_mode(Mix.env())
         ]
       ],
+      releases: releases(),
       # Escript for development testing
       escript: [
         main_module: GitFoil.CLI,
@@ -49,6 +51,15 @@ defmodule GitFoil.MixProject do
       dialyzer: [
         plt_add_apps: [:mix],
         plt_file: {:no_warn, "priv/plts/dialyzer.plt"}
+      ]
+    ]
+  end
+
+  defp releases do
+    [
+      git_foil: [
+        applications: [git_foil: :permanent],
+        include_executables_for: [:unix]
       ]
     ]
   end
@@ -81,7 +92,17 @@ defmodule GitFoil.MixProject do
       {:excoveralls, "~> 0.18", only: :test},
 
       # Property-based testing
-      {:stream_data, "~> 1.1", only: :test}
+      {:stream_data, "~> 1.1", only: :test},
+
+      # Tidewave MCP server for development
+      {:tidewave, github: "tidewave-ai/tidewave_phoenix", only: :dev},
+      {:bandit, "~> 1.5", only: :dev}
+    ]
+  end
+
+  defp aliases do
+    [
+      tidewave: "run --no-halt -e 'Application.put_env(:tidewave, :root, File.cwd!()); Application.put_env(:tidewave, :git_root, File.cwd!()); Application.put_env(:tidewave, :project_name, \"git_foil\"); Agent.start(fn -> Bandit.start_link(plug: {Tidewave, []}, port: 4010) end)'"
     ]
   end
 end
