@@ -128,11 +128,13 @@ P(break GitFoil) = P(break AES) × P(break AEGIS) × P(break Schwaemm)
                    × P(break Deoxys) × P(break Ascon) × P(break ChaCha20)
 ```
 
-If each has a 1% chance of catastrophic failure:
+If each has a 1% chance of catastrophic failure (purely illustrative):
 - One algorithm: **1% risk**
-- Six algorithms: **0.000000000001% risk**
+- Six algorithms: **0.0000000001% risk** (one ten-trillionth)
 
 That's one trillion times better odds.
+
+*The 1% figure is purely illustrative—actual algorithm security is much higher. The point is that cascading independent protections multiply your safety exponentially.*
 
 ### 3. Quantum Computers (Maybe)
 
