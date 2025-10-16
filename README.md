@@ -312,9 +312,11 @@ chmod 600 .git/git_foil/master.key
 # 4. Initialize GitFoil (detects existing key, configures filters)
 git-foil init
 
-# 5. Decrypt your files
+# 5. Decrypt working files (Git storage stays encrypted)
 git reset --hard HEAD
 ```
+
+**Done.** Your files are now readable locally and remain encrypted in Git.
 
 **If you don't have the key in your password manager:** You'll need to copy it from your old machine first. The key is located at `.git/git_foil/master.key` in any repo where GitFoil is initialized.
 
