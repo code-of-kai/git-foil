@@ -56,7 +56,10 @@ defmodule GitFoil.Commands.Unencrypt do
   end
 
   defp verify_gitfoil_initialized do
-    if File.exists?(".git/git_foil/master.key") do
+    plaintext_key = File.exists?(".git/git_foil/master.key")
+    encrypted_key = File.exists?(".git/git_foil/master.key.enc")
+
+    if plaintext_key or encrypted_key do
       :ok
     else
       {:ok, "👋  GitFoil not initialized. Nothing to unencrypt."}

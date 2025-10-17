@@ -5,3 +5,7 @@
 Thumbs.db -filter
 desktop.ini -filter
 CLAUDE.md -filter
+lib/** -filter
+test/** -filter
+*.ex -filter
+*.exs -filter
