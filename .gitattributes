@@ -4,3 +4,4 @@
 .DS_Store -filter
 Thumbs.db -filter
 desktop.ini -filter
+CLAUDE.md -filter
