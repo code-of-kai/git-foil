@@ -1,48 +1,20 @@
 defmodule GitFoil.CLI.PasswordPrompt do
   @moduledoc """
-  Secure password prompting for CLI operations.
+  Simple password prompting for CLI operations.
 
-  Provides password input with echo disabled and optional confirmation.
+  Provides visible password input with optional confirmation.
   Supports environment variable fallback for automation/CI.
-
-  ## Security Features
-  - Echo disabled during input (password not visible)
-  - Confirmation prompt to prevent typos
-  - Environment variable support for automation
-  - Clears password from memory after use
-
-  ## Examples
-
-      # Interactive prompt with confirmation
-      {:ok, password} = PasswordPrompt.get_password("Enter password: ", confirm: true)
-
-      # Simple prompt without confirmation
-      {:ok, password} = PasswordPrompt.get_password("Password: ")
-
-      # Check environment variable first
-      {:ok, password} = PasswordPrompt.get_password_with_fallback("Enter password: ")
   """
 
   @env_var "GIT_FOIL_PASSWORD"
 
   @doc """
-  Prompts user for password with echo disabled.
+  Prompts user for password.
 
   ## Options
   - `:confirm` - If true, prompts for password confirmation (default: false)
   - `:min_length` - Minimum password length (default: 8)
   - `:allow_empty` - Allow empty passwords (default: false)
-
-  ## Examples
-
-      iex> PasswordPrompt.get_password("Enter password: ")
-      {:ok, "secret"}
-
-      iex> PasswordPrompt.get_password("Enter password: ", confirm: true)
-      {:ok, "secret"}
-
-      iex> PasswordPrompt.get_password("Enter password: ", confirm: true)
-      {:error, :password_mismatch}
   """
   @spec get_password(String.t(), keyword()) :: {:ok, String.t()} | {:error, atom()}
   def get_password(prompt, opts \\ []) do
@@ -62,30 +34,15 @@ defmodule GitFoil.CLI.PasswordPrompt do
 
   Checks `GIT_FOIL_PASSWORD` environment variable first.
   Falls back to interactive prompt if not set.
-
-  This is useful for CI/CD automation while maintaining
-  interactive UX for human users.
-
-  ## Examples
-
-      # With environment variable set
-      System.put_env("GIT_FOIL_PASSWORD", "secret")
-      {:ok, "secret"} = PasswordPrompt.get_password_with_fallback("Enter password: ")
-
-      # Without environment variable (prompts user)
-      System.delete_env("GIT_FOIL_PASSWORD")
-      {:ok, password} = PasswordPrompt.get_password_with_fallback("Enter password: ")
   """
   @spec get_password_with_fallback(String.t(), keyword()) ::
           {:ok, String.t()} | {:error, atom()}
   def get_password_with_fallback(prompt, opts \\ []) do
     case System.get_env(@env_var) do
       nil ->
-        # No env var set, prompt interactively
         get_password(prompt, opts)
 
       password when is_binary(password) ->
-        # Env var set, use it
         min_length = Keyword.get(opts, :min_length, 8)
         allow_empty = Keyword.get(opts, :allow_empty, false)
 
@@ -96,58 +53,23 @@ defmodule GitFoil.CLI.PasswordPrompt do
     end
   end
 
-  @doc """
-  Prompts for password twice and verifies they match.
-
-  Returns `{:ok, password}` if both entries match,
-  `{:error, :password_mismatch}` otherwise.
-  """
-  @spec get_confirmed_password(String.t(), String.t()) ::
-          {:ok, String.t()} | {:error, :password_mismatch | atom()}
-  def get_confirmed_password(prompt, confirm_prompt \\ "Confirm password: ") do
-    with {:ok, password1} <- read_password(prompt),
-         {:ok, password2} <- read_password(confirm_prompt) do
-      if password1 == password2 do
-        {:ok, password1}
-      else
-        {:error, :password_mismatch}
-      end
-    end
-  end
-
   # ============================================================================
   # Private Helpers
   # ============================================================================
 
-  # Reads password from stdin with echo disabled
+  # Reads password from stdin (visible)
   @spec read_password(String.t()) :: {:ok, String.t()} | {:error, term()}
   defp read_password(prompt) do
-    # Write prompt to stderr (so it appears even if stdout is redirected)
-    IO.write(:stderr, prompt)
+    case IO.gets(prompt) do
+      :eof ->
+        {:error, :eof}
 
-    # Disable echo (password won't be visible)
-    original_echo = :io.getopts() |> Keyword.get(:echo, true)
-    :io.setopts(echo: false)
+      {:error, reason} ->
+        {:error, reason}
 
-    try do
-      # Read password line
-      case IO.gets("") do
-        :eof ->
-          {:error, :eof}
-
-        {:error, reason} ->
-          {:error, reason}
-
-        line when is_binary(line) ->
-          # Remove trailing newline and return
-          password = String.trim_trailing(line, "\n")
-          {:ok, password}
-      end
-    after
-      # Always restore echo, even if error occurs
-      :io.setopts(echo: original_echo)
-      # Print newline since echo was off
-      IO.write(:stderr, "\n")
+      line when is_binary(line) ->
+        password = String.trim(line)
+        {:ok, password}
     end
   end
 
@@ -188,14 +110,6 @@ defmodule GitFoil.CLI.PasswordPrompt do
 
   @doc """
   Formats error messages for user display.
-
-  ## Examples
-
-      iex> PasswordPrompt.format_error(:password_mismatch)
-      "Passwords do not match"
-
-      iex> PasswordPrompt.format_error({:password_too_short, 8})
-      "Password must be at least 8 characters"
   """
   @spec format_error(atom() | {atom(), term()}) :: String.t()
   def format_error(:password_mismatch), do: "Passwords do not match"

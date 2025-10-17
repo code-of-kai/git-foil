@@ -194,11 +194,11 @@ defmodule GitFoil.Core.KeyManager do
           {:initialized, :plaintext | :password_protected} | :not_initialized
   def initialization_status do
     cond do
-      PasswordProtectedKeyStorage.initialized?() ->
-        {:initialized, :password_protected}
-
       FileKeyStorage.initialized?() ->
         {:initialized, :plaintext}
+
+      PasswordProtectedKeyStorage.initialized?() ->
+        {:initialized, :password_protected}
 
       true ->
         :not_initialized

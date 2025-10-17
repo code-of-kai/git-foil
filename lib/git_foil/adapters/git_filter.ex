@@ -27,6 +27,7 @@ defmodule GitFoil.Adapters.GitFilter do
 
   alias GitFoil.Core.{EncryptionEngine, KeyManager}
   alias GitFoil.CLI.PasswordPrompt
+
   alias GitFoil.Adapters.{
     OpenSSLCrypto,
     AegisCrypto,
@@ -49,7 +50,8 @@ defmodule GitFoil.Adapters.GitFilter do
         {:error, "GitFoil not initialized - run 'git-foil init' first"}
 
       {:error, %UndefinedFunctionError{module: module}} ->
-        {:error, "Crypto library not loaded (#{inspect(module)}). Escripts cannot load NIFs. Use 'mix run' instead or create a proper release with 'mix release'."}
+        {:error,
+         "Crypto library not loaded (#{inspect(module)}). Escripts cannot load NIFs. Use 'mix run' instead or create a proper release with 'mix release'."}
 
       {:error, reason} ->
         {:error, "Encryption failed: #{format_error(reason)}"}
@@ -72,7 +74,8 @@ defmodule GitFoil.Adapters.GitFilter do
         {:ok, encrypted}
 
       {:error, %UndefinedFunctionError{module: module}} ->
-        {:error, "Crypto library not loaded (#{inspect(module)}). Escripts cannot load NIFs. Use 'mix run' instead or create a proper release with 'mix release'."}
+        {:error,
+         "Crypto library not loaded (#{inspect(module)}). Escripts cannot load NIFs. Use 'mix run' instead or create a proper release with 'mix release'."}
 
       {:error, reason} ->
         {:error, "Decryption failed: #{format_error(reason)}"}
@@ -81,17 +84,18 @@ defmodule GitFoil.Adapters.GitFilter do
 
   # Loads master encryption key from storage (plaintext or password-protected)
   defp load_master_key do
-    case KeyManager.initialization_status() do
-      {:initialized, :password_protected} ->
-        # Password-protected storage - try to unlock
+    case KeyManager.unlock_without_password() do
+      {:ok, master_key} ->
+        {:ok, master_key}
+
+      {:error, :password_required} ->
         unlock_password_protected()
 
-      {:initialized, :plaintext} ->
-        # Plaintext storage - load directly
-        KeyManager.unlock_without_password()
-
-      :not_initialized ->
+      {:error, :not_initialized} ->
         {:error, :not_initialized}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -150,12 +154,18 @@ defmodule GitFoil.Adapters.GitFilter do
       EncryptionEngine.encrypt(
         plaintext,
         master_key,
-        OpenSSLCrypto,           # Layer 1: AES-256-GCM
-        AegisCrypto,             # Layer 2: AEGIS-256
-        SchwaemmCrypto,          # Layer 3: Schwaemm256-256
-        DeoxysCrypto,            # Layer 4: Deoxys-II-256
-        AsconCrypto,             # Layer 5: Ascon-128a
-        ChaCha20Poly1305Crypto,  # Layer 6: ChaCha20-Poly1305
+        # Layer 1: AES-256-GCM
+        OpenSSLCrypto,
+        # Layer 2: AEGIS-256
+        AegisCrypto,
+        # Layer 3: Schwaemm256-256
+        SchwaemmCrypto,
+        # Layer 4: Deoxys-II-256
+        DeoxysCrypto,
+        # Layer 5: Ascon-128a
+        AsconCrypto,
+        # Layer 6: ChaCha20-Poly1305
+        ChaCha20Poly1305Crypto,
         file_path
       )
     rescue
@@ -171,12 +181,18 @@ defmodule GitFoil.Adapters.GitFilter do
       EncryptionEngine.decrypt(
         blob,
         master_key,
-        OpenSSLCrypto,           # Layer 1: AES-256-GCM
-        AegisCrypto,             # Layer 2: AEGIS-256
-        SchwaemmCrypto,          # Layer 3: Schwaemm256-256
-        DeoxysCrypto,            # Layer 4: Deoxys-II-256
-        AsconCrypto,             # Layer 5: Ascon-128a
-        ChaCha20Poly1305Crypto,  # Layer 6: ChaCha20-Poly1305
+        # Layer 1: AES-256-GCM
+        OpenSSLCrypto,
+        # Layer 2: AEGIS-256
+        AegisCrypto,
+        # Layer 3: Schwaemm256-256
+        SchwaemmCrypto,
+        # Layer 4: Deoxys-II-256
+        DeoxysCrypto,
+        # Layer 5: Ascon-128a
+        AsconCrypto,
+        # Layer 6: ChaCha20-Poly1305
+        ChaCha20Poly1305Crypto,
         file_path
       )
     rescue
@@ -211,20 +227,21 @@ defmodule GitFoil.Adapters.GitFilter do
     input = IO.binread(input_device, :eof)
 
     # Handle IO read errors
-    result = case input do
-      {:error, reason} ->
-        {:error, "Failed to read input: #{format_error(reason)}"}
+    result =
+      case input do
+        {:error, reason} ->
+          {:error, "Failed to read input: #{format_error(reason)}"}
 
-      :eof ->
-        # No input available (e.g., in tests with no stdin)
-        {:ok, ""}
+        :eof ->
+          # No input available (e.g., in tests with no stdin)
+          {:ok, ""}
 
-      binary when is_binary(binary) ->
-        case operation do
-          :clean -> clean(binary, file_path)
-          :smudge -> smudge(binary, file_path)
-        end
-    end
+        binary when is_binary(binary) ->
+          case operation do
+            :clean -> clean(binary, file_path)
+            :smudge -> smudge(binary, file_path)
+          end
+      end
 
     case result do
       {:ok, output} ->

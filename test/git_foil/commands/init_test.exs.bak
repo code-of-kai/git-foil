@@ -1,7 +1,27 @@
 defmodule GitFoil.Commands.InitTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false  # Not async because we create .gitattributes files
 
   alias GitFoil.Commands.Init
+
+  # Clean up before each test to avoid state pollution
+  setup do
+    # Clean up any leftover files from previous tests
+    File.rm(".gitattributes")
+    File.rm_rf(".git/git_foil")
+
+    on_exit(fn ->
+      # Clean up after test
+      File.rm(".gitattributes")
+      File.rm_rf(".git/git_foil")
+
+      # Clear mock configuration
+      Process.delete(:mock_git_config)
+      Process.delete(:mock_terminal_config)
+      Process.delete(:mock_terminal_inputs)
+    end)
+
+    :ok
+  end
 
   # ============================================================================
   # Mock Implementations
@@ -14,7 +34,7 @@ defmodule GitFoil.Commands.InitTest do
     Store configuration in process dictionary for stateful mocking.
     """
 
-    def configure(opts) do
+    def configure(opts \\ []) do
       Process.put(:mock_git_config, opts)
     end
 
@@ -36,6 +56,10 @@ defmodule GitFoil.Commands.InitTest do
 
     def list_files do
       get_mock(:list_files, fn -> {:ok, []} end).()
+    end
+
+    def list_all_files do
+      get_mock(:list_all_files, fn -> {:ok, []} end).()
     end
 
     def check_attr(attr, file) do
@@ -67,7 +91,7 @@ defmodule GitFoil.Commands.InitTest do
     Store configuration in process dictionary for stateful mocking.
     """
 
-    def configure(opts) do
+    def configure(opts \\ []) do
       Process.put(:mock_terminal_config, opts)
 
       # Store inputs for sequential reading
@@ -90,7 +114,16 @@ defmodule GitFoil.Commands.InitTest do
     end
 
     def with_spinner(label, work_fn, opts \\ []) do
-      get_mock(:with_spinner, fn _l, wf, _o -> wf.() end).(label, work_fn, opts)
+      # Default mock accepts 3 arguments
+      default_fn = fn _l, wf, _o -> wf.() end
+      mock_fn = get_mock(:with_spinner, default_fn)
+
+      # Handle both 2-arg and 3-arg mocks for flexibility
+      case :erlang.fun_info(mock_fn)[:arity] do
+        2 -> mock_fn.(label, work_fn)
+        3 -> mock_fn.(label, work_fn, opts)
+        _ -> default_fn.(label, work_fn, opts)
+      end
     end
 
     def progress_bar(current, total, width \\ 20) do
@@ -136,12 +169,12 @@ defmodule GitFoil.Commands.InitTest do
     end
 
     test "creates git repository when user confirms" do
-      mock_git = MockGit.new(
+      MockGit.configure(
         verify_repository: fn -> {:error, "not a git repository"} end,
         init_repository: fn -> {:ok, "Initialized empty Git repository"} end
       )
 
-      mock_terminal = MockTerminal.new(
+      MockTerminal.configure(
         inputs: [
           "y",    # Yes, create git repo
           "y"     # Yes, proceed with initialization
@@ -149,8 +182,8 @@ defmodule GitFoil.Commands.InitTest do
       )
 
       result = Init.run(
-        repository: mock_git,
-        terminal: mock_terminal,
+        repository: MockGit,
+        terminal: MockTerminal,
         skip_patterns: true
       )
 
@@ -159,18 +192,18 @@ defmodule GitFoil.Commands.InitTest do
     end
 
     test "handles git init failure" do
-      mock_git = MockGit.new(
+      MockGit.configure(
         verify_repository: fn -> {:error, "not a git repository"} end,
         init_repository: fn -> {:error, "permission denied"} end
       )
 
-      mock_terminal = MockTerminal.new(
+      MockTerminal.configure(
         inputs: ["y"] # User tries to create repo
       )
 
       result = Init.run(
-        repository: mock_git,
-        terminal: mock_terminal,
+        repository: MockGit,
+        terminal: MockTerminal,
         skip_patterns: true
       )
 
@@ -181,19 +214,19 @@ defmodule GitFoil.Commands.InitTest do
 
   describe "git configuration failures" do
     test "handles git config set failure" do
-      mock_git = MockGit.new(
+      MockGit.configure(
         verify_repository: fn -> {:ok, ".git"} end,
         set_config: fn _key, _value -> {:error, "config file locked"} end
       )
 
-      mock_terminal = MockTerminal.new(
+      MockTerminal.configure(
         inputs: ["y"], # Confirm initialization
         with_spinner: fn _label, work_fn -> work_fn.() end
       )
 
       result = Init.run(
-        repository: mock_git,
-        terminal: mock_terminal,
+        repository: MockGit,
+        terminal: MockTerminal,
         skip_patterns: true
       )
 
@@ -201,18 +234,18 @@ defmodule GitFoil.Commands.InitTest do
     end
 
     test "detects already configured filters" do
-      mock_git = MockGit.new(
+      MockGit.configure(
         verify_repository: fn -> {:ok, ".git"} end,
         config_exists?: fn "filter.gitfoil.clean" -> true; _ -> false end
       )
 
-      mock_terminal = MockTerminal.new(
+      MockTerminal.configure(
         inputs: ["y"] # Confirm initialization
       )
 
       result = Init.run(
-        repository: mock_git,
-        terminal: mock_terminal,
+        repository: MockGit,
+        terminal: MockTerminal,
         skip_patterns: true
       )
 
@@ -239,8 +272,8 @@ defmodule GitFoil.Commands.InitTest do
     end
 
     test "user chooses to use existing key" do
-      mock_git = MockGit.new()
-      mock_terminal = MockTerminal.new(
+      MockGit.configure()
+      MockTerminal.configure(
         inputs: [
           "1",  # Use existing key
           "y"   # Confirm initialization
@@ -248,8 +281,8 @@ defmodule GitFoil.Commands.InitTest do
       )
 
       result = Init.run(
-        repository: mock_git,
-        terminal: mock_terminal,
+        repository: MockGit,
+        terminal: MockTerminal,
         skip_patterns: true
       )
 
@@ -258,14 +291,14 @@ defmodule GitFoil.Commands.InitTest do
     end
 
     test "user chooses to exit initialization" do
-      mock_git = MockGit.new()
-      mock_terminal = MockTerminal.new(
+      MockGit.configure()
+      MockTerminal.configure(
         inputs: ["3"] # Exit
       )
 
       result = Init.run(
-        repository: mock_git,
-        terminal: mock_terminal,
+        repository: MockGit,
+        terminal: MockTerminal,
         skip_patterns: true
       )
 
@@ -274,8 +307,8 @@ defmodule GitFoil.Commands.InitTest do
     end
 
     test "user declines initialization at confirmation" do
-      mock_git = MockGit.new()
-      mock_terminal = MockTerminal.new(
+      MockGit.configure()
+      MockTerminal.configure(
         inputs: [
           "1",  # Use existing key
           "n"   # Don't proceed with initialization
@@ -283,8 +316,8 @@ defmodule GitFoil.Commands.InitTest do
       )
 
       result = Init.run(
-        repository: mock_git,
-        terminal: mock_terminal,
+        repository: MockGit,
+        terminal: MockTerminal,
         skip_patterns: true
       )
 
@@ -294,8 +327,8 @@ defmodule GitFoil.Commands.InitTest do
 
   describe "pattern configuration" do
     test "user chooses everything pattern" do
-      mock_git = MockGit.new()
-      mock_terminal = MockTerminal.new(
+      MockGit.configure()
+      MockTerminal.configure(
         inputs: [
           "y",  # Confirm initialization
           "1"   # Everything pattern
@@ -303,8 +336,8 @@ defmodule GitFoil.Commands.InitTest do
       )
 
       result = Init.run(
-        repository: mock_git,
-        terminal: mock_terminal
+        repository: MockGit,
+        terminal: MockTerminal
       )
 
       assert {:ok, msg} = result
@@ -312,8 +345,8 @@ defmodule GitFoil.Commands.InitTest do
     end
 
     test "user chooses secrets pattern" do
-      mock_git = MockGit.new()
-      mock_terminal = MockTerminal.new(
+      MockGit.configure()
+      MockTerminal.configure(
         inputs: [
           "y",  # Confirm initialization
           "2"   # Secrets pattern
@@ -321,8 +354,8 @@ defmodule GitFoil.Commands.InitTest do
       )
 
       result = Init.run(
-        repository: mock_git,
-        terminal: mock_terminal
+        repository: MockGit,
+        terminal: MockTerminal
       )
 
       assert {:ok, msg} = result
@@ -330,8 +363,8 @@ defmodule GitFoil.Commands.InitTest do
     end
 
     test "user chooses to decide later" do
-      mock_git = MockGit.new()
-      mock_terminal = MockTerminal.new(
+      MockGit.configure()
+      MockTerminal.configure(
         inputs: [
           "y",  # Confirm initialization
           "5"   # Decide later
@@ -339,8 +372,8 @@ defmodule GitFoil.Commands.InitTest do
       )
 
       result = Init.run(
-        repository: mock_git,
-        terminal: mock_terminal
+        repository: MockGit,
+        terminal: MockTerminal
       )
 
       assert {:ok, msg} = result
@@ -348,8 +381,8 @@ defmodule GitFoil.Commands.InitTest do
     end
 
     test "user enters custom patterns" do
-      mock_git = MockGit.new()
-      mock_terminal = MockTerminal.new(
+      MockGit.configure()
+      MockTerminal.configure(
         inputs: [
           "y",        # Confirm initialization
           "4",        # Custom patterns
@@ -360,8 +393,8 @@ defmodule GitFoil.Commands.InitTest do
       )
 
       result = Init.run(
-        repository: mock_git,
-        terminal: mock_terminal
+        repository: MockGit,
+        terminal: MockTerminal
       )
 
       assert {:ok, msg} = result
@@ -369,8 +402,8 @@ defmodule GitFoil.Commands.InitTest do
     end
 
     test "user enters custom patterns but then provides none" do
-      mock_git = MockGit.new()
-      mock_terminal = MockTerminal.new(
+      MockGit.configure()
+      MockTerminal.configure(
         inputs: [
           "y",  # Confirm initialization
           "4",  # Custom patterns
@@ -379,8 +412,8 @@ defmodule GitFoil.Commands.InitTest do
       )
 
       result = Init.run(
-        repository: mock_git,
-        terminal: mock_terminal
+        repository: MockGit,
+        terminal: MockTerminal
       )
 
       assert {:ok, msg} = result
@@ -394,11 +427,11 @@ defmodule GitFoil.Commands.InitTest do
 
   describe "file encryption" do
     test "handles git ls-files failure" do
-      mock_git = MockGit.new(
+      MockGit.configure(
         list_files: fn -> {:error, "failed to list files"} end
       )
 
-      mock_terminal = MockTerminal.new(
+      MockTerminal.configure(
         inputs: [
           "y",  # Confirm initialization
           "1"   # Everything pattern
@@ -406,8 +439,8 @@ defmodule GitFoil.Commands.InitTest do
       )
 
       result = Init.run(
-        repository: mock_git,
-        terminal: mock_terminal
+        repository: MockGit,
+        terminal: MockTerminal
       )
 
       # Should still complete, just skip encryption
@@ -415,12 +448,12 @@ defmodule GitFoil.Commands.InitTest do
     end
 
     test "offers encryption when files are found" do
-      mock_git = MockGit.new(
+      MockGit.configure(
         list_files: fn -> {:ok, ["file1.txt", "file2.txt"]} end,
         check_attr: fn _attr, _file -> {:ok, "file: filter: gitfoil"} end
       )
 
-      mock_terminal = MockTerminal.new(
+      MockTerminal.configure(
         inputs: [
           "y",  # Confirm initialization
           "1",  # Everything pattern
@@ -429,21 +462,21 @@ defmodule GitFoil.Commands.InitTest do
       )
 
       result = Init.run(
-        repository: mock_git,
-        terminal: mock_terminal
+        repository: MockGit,
+        terminal: MockTerminal
       )
 
       assert {:ok, _msg} = result
     end
 
     test "encrypts files when user confirms" do
-      mock_git = MockGit.new(
-        list_files: fn -> {:ok, ["file1.txt", "file2.txt"]} end,
+      MockGit.configure(
+        list_all_files: fn -> {:ok, ["file1.txt", "file2.txt"]} end,
         check_attr: fn _attr, _file -> {:ok, "file: filter: gitfoil"} end,
         add_file: fn _file -> :ok end
       )
 
-      mock_terminal = MockTerminal.new(
+      MockTerminal.configure(
         inputs: [
           "y",  # Confirm initialization
           "1",  # Everything pattern
@@ -452,8 +485,8 @@ defmodule GitFoil.Commands.InitTest do
       )
 
       result = Init.run(
-        repository: mock_git,
-        terminal: mock_terminal
+        repository: MockGit,
+        terminal: MockTerminal
       )
 
       assert {:ok, msg} = result
@@ -461,13 +494,13 @@ defmodule GitFoil.Commands.InitTest do
     end
 
     test "handles git add failure during encryption" do
-      mock_git = MockGit.new(
-        list_files: fn -> {:ok, ["file1.txt", "file2.txt"]} end,
+      MockGit.configure(
+        list_all_files: fn -> {:ok, ["file1.txt", "file2.txt"]} end,
         check_attr: fn _attr, _file -> {:ok, "file: filter: gitfoil"} end,
         add_file: fn _file -> {:error, "disk full"} end
       )
 
-      mock_terminal = MockTerminal.new(
+      MockTerminal.configure(
         inputs: [
           "y",  # Confirm initialization
           "1",  # Everything pattern
@@ -476,8 +509,8 @@ defmodule GitFoil.Commands.InitTest do
       )
 
       result = Init.run(
-        repository: mock_git,
-        terminal: mock_terminal
+        repository: MockGit,
+        terminal: MockTerminal
       )
 
       assert {:error, msg} = result
@@ -491,8 +524,8 @@ defmodule GitFoil.Commands.InitTest do
 
   describe "edge cases" do
     test "handles invalid pattern choice gracefully" do
-      mock_git = MockGit.new()
-      mock_terminal = MockTerminal.new(
+      MockGit.configure()
+      MockTerminal.configure(
         inputs: [
           "y",   # Confirm initialization
           "99"   # Invalid choice
@@ -500,8 +533,8 @@ defmodule GitFoil.Commands.InitTest do
       )
 
       result = Init.run(
-        repository: mock_git,
-        terminal: mock_terminal
+        repository: MockGit,
+        terminal: MockTerminal
       )
 
       assert {:error, msg} = result
@@ -509,11 +542,11 @@ defmodule GitFoil.Commands.InitTest do
     end
 
     test "handles repository_root failure" do
-      mock_git = MockGit.new(
+      MockGit.configure(
         repository_root: fn -> {:error, "cannot determine root"} end
       )
 
-      mock_terminal = MockTerminal.new(
+      MockTerminal.configure(
         inputs: [
           "y",  # Confirm initialization
           "5"   # Decide later (avoids file operations)
@@ -521,8 +554,8 @@ defmodule GitFoil.Commands.InitTest do
       )
 
       result = Init.run(
-        repository: mock_git,
-        terminal: mock_terminal
+        repository: MockGit,
+        terminal: MockTerminal
       )
 
       # Should still succeed, just use fallback path
@@ -534,15 +567,15 @@ defmodule GitFoil.Commands.InitTest do
       File.mkdir_p!(".git/git_foil")
       File.write!(".git/git_foil/master.key", "old_key")
 
-      mock_git = MockGit.new()
-      mock_terminal = MockTerminal.new(
+      MockGit.configure()
+      MockTerminal.configure(
         inputs: ["y"], # Confirm initialization
         with_spinner: fn _label, work_fn -> work_fn.() end
       )
 
       result = Init.run(
-        repository: mock_git,
-        terminal: mock_terminal,
+        repository: MockGit,
+        terminal: MockTerminal,
         skip_patterns: true,
         force: true
       )
@@ -560,48 +593,38 @@ defmodule GitFoil.Commands.InitTest do
 
   describe "terminal helpers" do
     test "progress bar formatting works" do
-      mock_terminal = MockTerminal.new(
+      MockGit.configure(
+        list_files: fn -> {:ok, ["file1.txt"]} end,
+        check_attr: fn _attr, _file -> {:ok, "file: filter: gitfoil"} end,
+        add_file: fn _file -> :ok end
+      )
+
+      MockTerminal.configure(
+        inputs: ["y", "1", "y"], # Confirm, Everything, Encrypt
         progress_bar: fn current, total, _width ->
           percentage = trunc(current / total * 100)
           "████ #{percentage}%"
         end
       )
 
-      mock_git = MockGit.new(
-        list_files: fn -> {:ok, ["file1.txt"]} end,
-        check_attr: fn _attr, _file -> {:ok, "file: filter: gitfoil"} end
-      )
-
-      mock_terminal_with_inputs = Map.put(mock_terminal, :safe_gets, fn _prompt ->
-        receive do
-          {:input, value} -> value
-        after
-          0 -> "y"
-        end
-      end)
-
-      send(self(), {:input, "y"}) # Confirm
-      send(self(), {:input, "1"}) # Everything
-      send(self(), {:input, "y"}) # Encrypt
-
       result = Init.run(
-        repository: mock_git,
-        terminal: mock_terminal_with_inputs
+        repository: MockGit,
+        terminal: MockTerminal
       )
 
       assert {:ok, _msg} = result
     end
 
     test "number formatting is used" do
-      mock_git = MockGit.new(
-        list_files: fn -> {:ok, Enum.map(1..1000, fn i -> "file#{i}.txt" end)} end,
+      MockGit.configure(
+        list_all_files: fn -> {:ok, Enum.map(1..1000, fn i -> "file#{i}.txt" end)} end,
         check_attr: fn _attr, _file -> {:ok, "file: filter: gitfoil"} end
       )
 
       format_number_called = make_ref()
       Process.put(format_number_called, false)
 
-      mock_terminal = MockTerminal.new(
+      MockTerminal.configure(
         inputs: [
           "y",  # Confirm
           "1",  # Everything
@@ -614,8 +637,8 @@ defmodule GitFoil.Commands.InitTest do
       )
 
       result = Init.run(
-        repository: mock_git,
-        terminal: mock_terminal
+        repository: MockGit,
+        terminal: MockTerminal
       )
 
       assert {:ok, _msg} = result

@@ -135,7 +135,8 @@ defmodule GitFoil.Infrastructure.Terminal do
 
   defp await_work(work_fn, min_duration, start_time) do
     work_task = Task.async(work_fn)
-    result = Task.await(work_task, 15_000)
+    # 5 minute timeout for long-running operations like file discovery
+    result = Task.await(work_task, 300_000)
     enforce_min_duration(min_duration, start_time)
     result
   end

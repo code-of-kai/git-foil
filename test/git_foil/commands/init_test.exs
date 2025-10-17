@@ -66,6 +66,14 @@ defmodule GitFoil.Commands.InitTest do
       get_mock(:check_attr, fn _a, _f -> {:ok, "unspecified"} end).(attr, file)
     end
 
+    def check_attr_batch(attr, files) do
+      get_mock(:check_attr_batch, fn _a, fs ->
+        # Default: mark all files as having gitfoil filter
+        results = Enum.map(fs, fn file -> {file, "gitfoil"} end)
+        {:ok, results}
+      end).(attr, files)
+    end
+
     def add_file(file) do
       get_mock(:add_file, fn _f -> :ok end).(file)
     end
@@ -158,7 +166,7 @@ defmodule GitFoil.Commands.InitTest do
         inputs: ["n"] # User says no to creating repo
       )
 
-      result = Init.run(
+      result = Init.run(password: false, 
         repository: MockGit,
         terminal: MockTerminal,
         skip_patterns: true
@@ -181,7 +189,7 @@ defmodule GitFoil.Commands.InitTest do
         ]
       )
 
-      result = Init.run(
+      result = Init.run(password: false, 
         repository: MockGit,
         terminal: MockTerminal,
         skip_patterns: true
@@ -201,7 +209,7 @@ defmodule GitFoil.Commands.InitTest do
         inputs: ["y"] # User tries to create repo
       )
 
-      result = Init.run(
+      result = Init.run(password: false, 
         repository: MockGit,
         terminal: MockTerminal,
         skip_patterns: true
@@ -224,7 +232,7 @@ defmodule GitFoil.Commands.InitTest do
         with_spinner: fn _label, work_fn -> work_fn.() end
       )
 
-      result = Init.run(
+      result = Init.run(password: false, 
         repository: MockGit,
         terminal: MockTerminal,
         skip_patterns: true
@@ -243,7 +251,7 @@ defmodule GitFoil.Commands.InitTest do
         inputs: ["y"] # Confirm initialization
       )
 
-      result = Init.run(
+      result = Init.run(password: false, 
         repository: MockGit,
         terminal: MockTerminal,
         skip_patterns: true
@@ -280,7 +288,7 @@ defmodule GitFoil.Commands.InitTest do
         ]
       )
 
-      result = Init.run(
+      result = Init.run(password: false, 
         repository: MockGit,
         terminal: MockTerminal,
         skip_patterns: true
@@ -290,19 +298,22 @@ defmodule GitFoil.Commands.InitTest do
       assert msg =~ "setup complete"
     end
 
-    test "user chooses to exit initialization" do
+    test "user declines initialization when prompted" do
       MockGit.configure()
       MockTerminal.configure(
-        inputs: ["3"] # Exit
+        inputs: [
+          "1",  # Use existing key
+          "n"   # Decline initialization
+        ]
       )
 
-      result = Init.run(
+      result = Init.run(password: false,
         repository: MockGit,
         terminal: MockTerminal,
         skip_patterns: true
       )
 
-      # Exit returns {:ok, ""} per the code
+      # Declining initialization returns {:ok, ""} per the code
       assert {:ok, ""} = result
     end
 
@@ -315,7 +326,7 @@ defmodule GitFoil.Commands.InitTest do
         ]
       )
 
-      result = Init.run(
+      result = Init.run(password: false, 
         repository: MockGit,
         terminal: MockTerminal,
         skip_patterns: true
@@ -335,7 +346,7 @@ defmodule GitFoil.Commands.InitTest do
         ]
       )
 
-      result = Init.run(
+      result = Init.run(password: false, 
         repository: MockGit,
         terminal: MockTerminal
       )
@@ -353,7 +364,7 @@ defmodule GitFoil.Commands.InitTest do
         ]
       )
 
-      result = Init.run(
+      result = Init.run(password: false, 
         repository: MockGit,
         terminal: MockTerminal
       )
@@ -371,7 +382,7 @@ defmodule GitFoil.Commands.InitTest do
         ]
       )
 
-      result = Init.run(
+      result = Init.run(password: false, 
         repository: MockGit,
         terminal: MockTerminal
       )
@@ -392,7 +403,7 @@ defmodule GitFoil.Commands.InitTest do
         ]
       )
 
-      result = Init.run(
+      result = Init.run(password: false, 
         repository: MockGit,
         terminal: MockTerminal
       )
@@ -411,7 +422,7 @@ defmodule GitFoil.Commands.InitTest do
         ]
       )
 
-      result = Init.run(
+      result = Init.run(password: false, 
         repository: MockGit,
         terminal: MockTerminal
       )
@@ -438,7 +449,7 @@ defmodule GitFoil.Commands.InitTest do
         ]
       )
 
-      result = Init.run(
+      result = Init.run(password: false, 
         repository: MockGit,
         terminal: MockTerminal
       )
@@ -461,7 +472,7 @@ defmodule GitFoil.Commands.InitTest do
         ]
       )
 
-      result = Init.run(
+      result = Init.run(password: false, 
         repository: MockGit,
         terminal: MockTerminal
       )
@@ -484,7 +495,7 @@ defmodule GitFoil.Commands.InitTest do
         ]
       )
 
-      result = Init.run(
+      result = Init.run(password: false, 
         repository: MockGit,
         terminal: MockTerminal
       )
@@ -508,7 +519,7 @@ defmodule GitFoil.Commands.InitTest do
         ]
       )
 
-      result = Init.run(
+      result = Init.run(password: false, 
         repository: MockGit,
         terminal: MockTerminal
       )
@@ -532,7 +543,7 @@ defmodule GitFoil.Commands.InitTest do
         ]
       )
 
-      result = Init.run(
+      result = Init.run(password: false, 
         repository: MockGit,
         terminal: MockTerminal
       )
@@ -553,7 +564,7 @@ defmodule GitFoil.Commands.InitTest do
         ]
       )
 
-      result = Init.run(
+      result = Init.run(password: false, 
         repository: MockGit,
         terminal: MockTerminal
       )
@@ -573,7 +584,7 @@ defmodule GitFoil.Commands.InitTest do
         with_spinner: fn _label, work_fn -> work_fn.() end
       )
 
-      result = Init.run(
+      result = Init.run(password: false, 
         repository: MockGit,
         terminal: MockTerminal,
         skip_patterns: true,
@@ -607,7 +618,7 @@ defmodule GitFoil.Commands.InitTest do
         end
       )
 
-      result = Init.run(
+      result = Init.run(password: false, 
         repository: MockGit,
         terminal: MockTerminal
       )
@@ -636,7 +647,7 @@ defmodule GitFoil.Commands.InitTest do
         end
       )
 
-      result = Init.run(
+      result = Init.run(password: false, 
         repository: MockGit,
         terminal: MockTerminal
       )

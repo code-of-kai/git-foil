@@ -426,10 +426,9 @@ defmodule GitFoil.Commands.Init do
     if choice do
       IO.puts("")
       IO.puts("🔒  The master key will be encrypted with your password.")
-      IO.puts("    Input is hidden and you'll confirm it before continuing.")
 
       case PasswordPrompt.get_password(
-             "Password for master key (input hidden): ",
+             "Password for master key: ",
              confirm: true
            ) do
         {:ok, password} ->
@@ -613,7 +612,7 @@ defmodule GitFoil.Commands.Init do
           case provided_password do
             nil ->
               case PasswordPrompt.get_password(
-                     "Password for master key (input hidden): ",
+                     "Password for master key: ",
                      confirm: true
                    ) do
                 {:ok, pwd} -> {:ok, pwd}
@@ -739,27 +738,28 @@ defmodule GitFoil.Commands.Init do
   # ============================================================================
 
   defp get_executable_path do
-    # In test environment, use mix run directly (avoids escript NIF loading issues)
-    if Mix.env() == :test do
-      # Get the actual project root, not the test directory
-      # __DIR__ is lib/git_foil/commands, so go up 3 levels
-      project_root = Path.expand("../../..", __DIR__)
-      "cd '#{project_root}' && mix run -e 'GitFoil.CLI.main(System.argv())' --"
-    else
-      # Detect the path to the currently running git-foil executable
-      case System.fetch_env("_") do
-        {:ok, path} when path != "" ->
-          # Use the path that was used to invoke this command
-          path
+    project_root = Path.expand("../../..", __DIR__)
+    bin_path = Path.join(project_root, "bin/git-foil")
 
-        :error ->
-          # Fallback: try to find git-foil in PATH
-          case System.find_executable("git-foil-dev") do
-            # Last resort: assume it's in PATH
-            nil -> "git-foil-dev"
-            path -> path
-          end
-      end
+    cond do
+      Mix.env() == :test ->
+        "cd '#{project_root}' && mix run -e 'GitFoil.CLI.main(System.argv())' --"
+
+      File.regular?(bin_path) ->
+        bin_path
+
+      match?({:ok, path} when path not in ["", "mix"], System.fetch_env("_")) ->
+        {:ok, path} = System.fetch_env("_")
+        path
+
+      executable = System.find_executable("git-foil") ->
+        executable
+
+      executable = System.find_executable("git-foil-dev") ->
+        executable
+
+      true ->
+        "git-foil"
     end
   end
 
@@ -770,17 +770,18 @@ defmodule GitFoil.Commands.Init do
   defp maybe_encrypt_files(:skipped, _opts), do: {:ok, false}
 
   defp maybe_encrypt_files(_pattern_status, opts) do
-    # Count only files matching the configured encryption patterns
-    case count_files_matching_patterns(opts) do
-      {:ok, 0} ->
+    # Discover files and cache the list to avoid re-scanning
+    case discover_files_to_encrypt(opts) do
+      {:ok, []} ->
         IO.puts("")
         IO.puts("📝  No existing files found in repository.")
         IO.puts("    Files will be encrypted as you add them with git add/commit.")
         IO.puts("")
         {:ok, false}
 
-      {:ok, count} ->
-        offer_encryption(count, opts)
+      {:ok, files} ->
+        # Pass the discovered files to avoid re-scanning
+        offer_encryption(length(files), files, opts)
 
       {:error, reason} ->
         IO.puts("")
@@ -792,10 +793,154 @@ defmodule GitFoil.Commands.Init do
     end
   end
 
-  defp count_files_matching_patterns(opts) do
-    with {:ok, all_files} <- get_all_repository_files(opts),
-         {:ok, matching_files} <- get_files_matching_patterns(all_files, opts) do
-      {:ok, length(matching_files)}
+  defp discover_files_to_encrypt(opts) do
+    terminal = Keyword.get(opts, :terminal, Terminal)
+    repository = Keyword.get(opts, :repository, Git)
+
+    # Show spinner while discovering files
+    result =
+      terminal.with_spinner("Searching for files to encrypt", fn ->
+        with {:ok, all_files} <- get_all_repository_files(opts),
+             {:ok, matching_files} <- get_files_matching_patterns(all_files, opts),
+             {:ok, eligible_files} <- filter_addable_files(matching_files, repository) do
+          {:ok, eligible_files}
+        end
+      end)
+
+    case result do
+      {:ok, eligible_files} ->
+        if eligible_files != [] do
+          IO.puts(
+            "✅  Found #{terminal.format_number(length(eligible_files))} #{terminal.pluralize("file", length(eligible_files))} to encrypt"
+          )
+        end
+
+        {:ok, eligible_files}
+
+      error ->
+        error
+    end
+  end
+
+  defp filter_addable_files(files, Git) do
+    files
+    |> Enum.filter(&file_addition_candidate?/1)
+    |> filter_not_gitignored()
+    |> filter_by_git_add_dry_run()
+  end
+
+  defp filter_addable_files(files, _mock_repository) do
+    {:ok, files}
+  end
+
+  defp file_addition_candidate?(file) do
+    File.exists?(file) && File.regular?(file)
+  end
+
+  defp filter_not_gitignored([]), do: []
+
+  defp filter_not_gitignored(files) do
+    # Batch check which files are gitignored using a Port to handle large file lists
+    port = Port.open({:spawn, "git check-ignore --stdin"}, [:binary, :exit_status])
+
+    # Send all filenames to git check-ignore via stdin
+    Port.command(port, Enum.join(files, "\n") <> "\n")
+
+    ignored_files = read_port_output(port, "")
+
+    ignored_set =
+      ignored_files
+      |> String.split("\n", trim: true)
+      |> MapSet.new()
+
+    Enum.reject(files, fn file -> MapSet.member?(ignored_set, file) end)
+  end
+
+  defp filter_by_git_add_dry_run(files) do
+    Enum.reduce_while(files, {:ok, [], []}, fn file, {:ok, acc, skipped} ->
+      case git_add_dry_run(file) do
+        :ok ->
+          {:cont, {:ok, [file | acc], skipped}}
+
+        {:ignored, message} ->
+          {:cont, {:ok, acc, [{file, message} | skipped]}}
+
+        {:error, reason} ->
+          {:halt, {:error, "git add --dry-run failed for #{file}: #{reason}"}}
+      end
+    end)
+    |> case do
+      {:ok, acc, skipped} ->
+        maybe_warn_skipped_files(skipped)
+        {:ok, Enum.reverse(acc)}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp maybe_warn_skipped_files([]), do: :ok
+
+  defp maybe_warn_skipped_files(skipped) do
+    count = length(skipped)
+
+    IO.puts("")
+
+    IO.puts(
+      "⚠️  Skipping #{count} #{if count == 1, do: "file", else: "files"} ignored by Git patterns:"
+    )
+
+    skipped
+    |> Enum.reverse()
+    |> Enum.take(5)
+    |> Enum.each(fn {file, _message} ->
+      IO.puts("   • #{file}")
+    end)
+
+    if count > 5 do
+      IO.puts("   • ...")
+    end
+
+    IO.puts("    (Use `git add -f <path>` if you intentionally want to include ignored files.)")
+    IO.puts("")
+  end
+
+  defp git_add_dry_run(file) do
+    case System.cmd("git", ["add", "--dry-run", "--", file], stderr_to_stdout: true) do
+      {_, 0} ->
+        :ok
+
+      {output, status} ->
+        trimmed = String.trim(output)
+
+        cond do
+          trimmed == "" && status != 0 ->
+            {:error, "exit status #{status}"}
+
+          String.contains?(trimmed, "ignored by one of your .gitignore files") ->
+            {:ignored, trimmed}
+
+          String.contains?(trimmed, "nothing added (use -u to track)") ->
+            {:ignored, trimmed}
+
+          true ->
+            {:error, trimmed}
+        end
+    end
+  end
+
+  defp read_port_output(port, acc) do
+    receive do
+      {^port, {:data, data}} ->
+        read_port_output(port, acc <> data)
+
+      {^port, {:exit_status, _status}} ->
+        Port.close(port)
+        acc
+    after
+      5000 ->
+        Port.close(port)
+        acc
     end
   end
 
@@ -804,7 +949,7 @@ defmodule GitFoil.Commands.Init do
     repository.list_all_files()
   end
 
-  defp offer_encryption(count, opts) do
+  defp offer_encryption(count, files, opts) do
     terminal = Keyword.get(opts, :terminal, Terminal)
     many_files = count > 100
 
@@ -841,38 +986,27 @@ defmodule GitFoil.Commands.Init do
     answer = terminal.safe_gets("\nEncrypt now? [Y/n]: ") |> String.downcase()
 
     if affirmed?(answer) do
-      encrypt_files_with_progress(count, opts)
+      encrypt_files_with_progress(files, opts)
     else
       IO.puts("")
       {:ok, false}
     end
   end
 
-  defp encrypt_files_with_progress(_count, opts) do
+  defp encrypt_files_with_progress(files, opts) do
     terminal = Keyword.get(opts, :terminal, Terminal)
+    count = length(files)
+
     IO.puts("")
 
-    # Get only files that match the configured encryption patterns
-    with {:ok, all_files} <- get_all_repository_files(opts),
-         {:ok, matching_files} <- get_files_matching_patterns(all_files, opts) do
-      actual_count = length(matching_files)
+    IO.puts(
+      "🔒  Encrypting #{terminal.format_number(count)} #{terminal.pluralize("file", count)} matching your patterns..."
+    )
 
-      if actual_count == 0 do
-        IO.puts("🔒  No files match your encryption patterns.")
-        IO.puts("    Files will be encrypted as you add them with git add/commit.")
-        IO.puts("")
-        {:ok, false}
-      else
-        IO.puts(
-          "🔒  Encrypting #{terminal.format_number(actual_count)} #{terminal.pluralize("file", actual_count)} matching your patterns..."
-        )
+    IO.puts("")
 
-        IO.puts("")
-
-        with :ok <- add_files_with_progress(matching_files, actual_count, opts) do
-          {:ok, true}
-        end
-      end
+    with :ok <- add_files_with_progress(files, count, opts) do
+      {:ok, true}
     end
   end
 
