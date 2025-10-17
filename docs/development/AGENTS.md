@@ -259,22 +259,11 @@ gh api repos/owner/repo/commits/branch --jq '.commit.message'
 
 ### Build & Install
 
-**CRITICAL: The installed binary is a symlink to the DEV build**
+- **Development:** run `mix foil <command>` (Mix auto-recompiles)
+- **Build a release when needed:** `mix release --overwrite`
+- **Run the built binary:** `_build/dev/rel/git_foil/bin/git-foil …`
 
-```bash
-/usr/local/bin/git-foil -> /Users/kaitaylor/Documents/Coding/git-foil/_build/dev/rel/git_foil/bin/git-foil
-```
-
-**To update the binary after code changes:**
-
-```bash
-cd /Users/kaitaylor/Documents/Coding/git-foil
-mix release --overwrite  # Builds DEV version (NOT prod)
-```
-
-**The symlink automatically uses the updated dev build. No copying needed.**
-
-**NEVER run `MIX_ENV=prod mix release` unless explicitly asked** - the installed binary points to `_build/dev/`, not `_build/prod/`.
+Install/copy the release wherever you need it; there is no dedicated install script.
 
 ### Why Mix Release (not escript)
 
@@ -282,5 +271,3 @@ mix release --overwrite  # Builds DEV version (NOT prod)
 - Native dependencies (pqclean_nif.so, Rust NIFs) require a release
 - Escripts cannot bundle .so files needed for quantum-resistant crypto
 - The release is configured with `include_erts: false` to use system Erlang
-
-

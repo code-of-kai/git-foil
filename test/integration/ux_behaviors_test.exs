@@ -70,13 +70,12 @@ defmodule Integration.UXBehaviorsTest do
         {_output, 0} = System.cmd("git", ["commit", "-m", "Mixed files"], cd: repo_path)
 
         # Run init with env-only pattern (option 3)
-        answers = "y\n3\ny\n"  # yes, env files only, yes to encrypt
-        {output, 0} = System.cmd(
-          "sh",
-          ["-c", "echo '#{answers}' | git-foil init"],
-          cd: repo_path,
-          stderr_to_stdout: true
-        )
+        answers =
+          ["y", "gitfoil-test", "gitfoil-test", "y", "3", "y"]
+          |> Enum.join("\n")
+          |> Kernel.<>("\n")
+
+        {output, 0} = GitTestHelper.run_init_with_answers(repo_path, answers)
 
         # Should only count .env files (2), not .txt files (1)
         assert output =~ "Found 2 files matching", "Should only count .env files"
@@ -97,8 +96,9 @@ defmodule Integration.UXBehaviorsTest do
         {_output, 0} = System.cmd("git", ["add", "."], cd: repo_path)
         {_output, 0} = System.cmd("git", ["commit", "-m", "Many files"], cd: repo_path)
 
-        # Run init
-        {output, 0} = GitTestHelper.run_init(repo_path)
+        # Run init with password-protected flow to avoid interactive prompts
+        answers = Enum.join(["y", "gitfoil-test", "gitfoil-test", "y", "1", "y"], "\n") <> "\n"
+        {output, 0} = GitTestHelper.run_init_with_answers(repo_path, answers)
 
         # Should correctly count all 150 files (not 0 due to batch bug)
         assert output =~ "Found 150 files matching", "Should count all 150 files in batch mode"
@@ -168,6 +168,30 @@ defmodule Integration.UXBehaviorsTest do
       end
     end
 
+    test "shows progress while discovering files to encrypt" do
+      repo_path = GitTestHelper.create_test_repo()
+
+      try do
+        Enum.each(1..3, fn i ->
+          GitTestHelper.create_file(repo_path, "doc#{i}.txt", "data#{i}")
+        end)
+
+        {_output, 0} = System.cmd("git", ["add", "."], cd: repo_path)
+        {_output, 0} = System.cmd("git", ["commit", "-m", "Docs"], cd: repo_path)
+
+        {output, 0} = GitTestHelper.run_init(repo_path)
+
+        assert output =~ "🔍  Searching for files to encrypt...",
+               "Should announce the search progress"
+
+        [before_encrypt | _] = String.split(output, "🔒  Encrypting")
+        assert before_encrypt =~ "3/3 files",
+               "Should show discovery progress before encryption begins"
+      after
+        GitTestHelper.cleanup_test_repo(repo_path)
+      end
+    end
+
     test "does not show progress bar when no files to encrypt" do
       repo_path = GitTestHelper.create_test_repo()
 
@@ -195,13 +219,12 @@ defmodule Integration.UXBehaviorsTest do
         {_output, 0} = System.cmd("git", ["commit", "-m", "File"], cd: repo_path)
 
         # Run init but decline to encrypt now
-        answers = "y\n1\nn\n"  # yes to init, everything pattern, NO to encrypt now
-        {output, 0} = System.cmd(
-          "sh",
-          ["-c", "echo '#{answers}' | git-foil init"],
-          cd: repo_path,
-          stderr_to_stdout: true
-        )
+        answers =
+          ["y", "gitfoil-test", "gitfoil-test", "y", "1", "n"]
+          |> Enum.join("\n")
+          |> Kernel.<>("\n")
+
+        {output, 0} = GitTestHelper.run_init_with_answers(repo_path, answers)
 
         # Should explain what happens next
         assert output =~ "Found 1 file matching", "Should show file was found"
@@ -354,12 +377,12 @@ defmodule Integration.UXBehaviorsTest do
         File.rm_rf!(Path.join([repo_path, ".git", "info"]))
 
         # Run init (might fail or succeed with warning)
-        {output, exit_code} = System.cmd(
-          "sh",
-          ["-c", "echo 'y\n1\ny\n' | git-foil init"],
-          cd: repo_path,
-          stderr_to_stdout: true
-        )
+        answers =
+          ["y", "gitfoil-test", "gitfoil-test", "y", "1", "y"]
+          |> Enum.join("\n")
+          |> Kernel.<>("\n")
+
+        {output, exit_code} = GitTestHelper.run_init_with_answers(repo_path, answers)
 
         # Should show some kind of message (either error or warning)
         assert output =~ "Warning" or output =~ "Error" or output =~ "Could not",

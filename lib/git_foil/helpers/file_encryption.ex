@@ -27,16 +27,19 @@ defmodule GitFoil.Helpers.FileEncryption do
     repository = Keyword.get(opts, :repository)
     terminal = Keyword.get(opts, :terminal, Terminal)
 
-    # Initial progress display
-    IO.write("   ")
+    show_progress? = total > 0
+
+    if show_progress? do
+      IO.write("   ")
+    end
 
     files
     |> Enum.with_index(1)
     |> Enum.reduce_while(:ok, fn {file, index}, _acc ->
-      # Show progress before the operation
-      # \r moves cursor to start of line, \e[K clears from cursor to end of line
-      progress_bar = terminal.progress_bar(index, total)
-      IO.write("\r\e[K   #{progress_bar} #{index}/#{total} files")
+      if show_progress? do
+        progress_bar = terminal.progress_bar(index, total)
+        IO.write("\r\e[K   #{progress_bar} #{index}/#{total} files")
+      end
 
       # Add the file (triggers clean filter for encryption)
       result = if repository do
@@ -61,12 +64,19 @@ defmodule GitFoil.Helpers.FileEncryption do
     end)
     |> case do
       :ok ->
-        IO.write("\n")
+        if show_progress? do
+          IO.write("\n")
+        end
+
         IO.puts("✅  All files encrypted and staged successfully")
         IO.puts("")
         :ok
 
       error ->
+        if show_progress? do
+          IO.write("\n")
+        end
+
         error
     end
   end

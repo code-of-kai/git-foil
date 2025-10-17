@@ -58,19 +58,12 @@ defmodule GitFoil.Test.GitTestHelper do
   Automatically answers prompts with defaults (yes, encrypt everything, yes encrypt now).
   """
   def run_init(repo_path) do
-    # Create a script that pipes answers to git-foil init
-    answers = "y\n1\ny\n"
+    default_answers =
+      ["y", test_password(), test_password(), "y", "1", "y"]
+      |> Enum.join("\n")
+      |> Kernel.<>("\n")
 
-    git_foil_cmd = get_git_foil_command()
-
-    {output, exit_code} = System.cmd(
-      "sh",
-      ["-c", "echo '#{answers}' | #{git_foil_cmd} init"],
-      cd: repo_path,
-      stderr_to_stdout: true
-    )
-
-    {output, exit_code}
+    run_init_with_answers(repo_path, default_answers)
   end
 
   @doc """
@@ -82,16 +75,14 @@ defmodule GitFoil.Test.GitTestHelper do
     # Answer yes to both confirmation prompts
     answers = "y\nyes\n"
 
-    git_foil_cmd = get_git_foil_command()
+    run_cli(repo_path, "unencrypt", answers)
+  end
 
-    {output, exit_code} = System.cmd(
-      "sh",
-      ["-c", "echo '#{answers}' | #{git_foil_cmd} unencrypt"],
-      cd: repo_path,
-      stderr_to_stdout: true
-    )
-
-    {output, exit_code}
+  @doc """
+  Runs git-foil init with custom answers.
+  """
+  def run_init_with_answers(repo_path, answers) do
+    run_cli(repo_path, "init", answers)
   end
 
   @doc """
@@ -201,22 +192,68 @@ defmodule GitFoil.Test.GitTestHelper do
     end)
   end
 
-  @doc """
-  Gets the git-foil command to use for tests.
-
-  Prefers the local development build (git-foil-dev) if it exists,
-  otherwise falls back to the installed git-foil escript.
-  """
   defp get_git_foil_command do
     # Get project root (assumes we're in test/support/)
     project_root = Path.expand("../..", __DIR__)
     dev_escript = Path.join(project_root, "git-foil-dev")
 
     if File.exists?(dev_escript) do
-      dev_escript
+      {:escript, dev_escript}
     else
-      # Fall back to installed escript
-      "git-foil"
+      {:mix, project_root}
     end
+  end
+
+  defp build_command({:escript, path}, subcommand, _repo_path, answers) do
+    env = password_env_prefix(answers)
+    "#{env}#{path} #{subcommand}"
+  end
+
+  defp build_command({:mix, project_root}, subcommand, repo_path, answers) do
+    escaped_root = escape_path(project_root)
+    escaped_repo = escape_path(repo_path)
+    eval =
+      "File.cd!(System.get_env(\"GIT_FOIL_TEST_REPO\")); GitFoil.CLI.main(System.argv())"
+
+    password_env = password_env_prefix(answers)
+
+    "(cd #{escaped_root} && #{password_env}GIT_FOIL_TEST_REPO=#{escaped_repo} mix run -e '#{eval}' -- #{subcommand})"
+  end
+
+  defp escape_path(path) do
+    "'" <> String.replace(path, "'", "'\"'\"'") <> "'"
+  end
+
+  defp test_password, do: "gitfoil-test"
+
+  defp password_env_prefix(answers) do
+    first_answer =
+      answers
+      |> String.split("\n", parts: 2)
+      |> List.first()
+      |> to_string()
+      |> String.trim()
+      |> String.downcase()
+
+    if first_answer == "y" do
+      "GIT_FOIL_PASSWORD=#{test_password()} "
+    else
+      ""
+    end
+  end
+
+  defp run_cli(repo_path, subcommand, answers) do
+    git_foil_cmd = get_git_foil_command()
+    command = build_command(git_foil_cmd, subcommand, repo_path, answers)
+
+    {output, exit_code} =
+      System.cmd(
+        "sh",
+        ["-c", "echo '#{answers}' | #{command}"],
+        cd: repo_path,
+        stderr_to_stdout: true
+      )
+
+    {output, exit_code}
   end
 end

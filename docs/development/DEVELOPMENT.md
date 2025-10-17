@@ -6,65 +6,42 @@
 git-foil/              # Source code (this directory)
 ├── lib/                      # Elixir source code
 ├── native/                   # Rust NIFs
-├── _build/dev/rel/git_foil/  # Build output (dev mode)
-├── install.sh               # Production installation
-└── install-dev.sh           # Development installation (recommended)
+└── _build/dev/rel/git_foil/  # Build output (dev mode)
 ```
 
 ## Best Practice Workflow
-
-### Initial Setup (One Time)
-
-```bash
-# Install in development mode (uses symlinks)
-./install-dev.sh
-```
-
-This creates symlinks from `/usr/local/` to your `_build` directory, so rebuilds automatically update the installed version.
 
 ### Development Cycle
 
 ```bash
 # 1. Make code changes
-# 2. Rebuild
+# 2. Run directly with Mix (auto recompiles)
+mix foil init
+
+# Optional: build a local release for CLI testing
 mix release --overwrite
 
-# 3. Test immediately (no reinstall needed!)
-git-foil --version
+# 3. Test the built binary (release output)
+_build/dev/rel/git_foil/bin/git-foil --version
 ```
 
 ### Production Installation
 
-When you want to create a proper production installation (copies files instead of symlinks):
+Build a release when you need to install or package the CLI:
 
 ```bash
-./install.sh
+mix release --overwrite
 ```
 
-## Installation Locations
-
-- **Source**: `/Users/kaitaylor/Documents/Coding/git-foil`
-- **Build**: `/Users/kaitaylor/Documents/Coding/git-foil/_build/dev/rel/git_foil`
-- **Install**: `/usr/local/git-foil` (symlink to build in dev mode)
-- **Binary**: `/usr/local/bin/git-foil` (symlink to executable)
+The release will be available under `_build/dev/rel/git_foil/` (or `_build/prod/…` if you use `MIX_ENV=prod`). Install/copy it wherever you choose; no bundled installer is provided.
 
 ## Why This Approach?
 
-✅ **No manual copying**: Scripts handle installation
-✅ **Fast iteration**: Dev mode uses symlinks - rebuild and test immediately
-✅ **Clean separation**: Source, build, and install are clearly separated
-✅ **Production ready**: `install.sh` creates proper standalone installation
+✅ **Fast iteration**: `mix foil` auto-recompiles – no wrapper scripts
+✅ **Simple packaging**: `mix release` builds the deployable artifact
+✅ **Clean separation**: Source and build outputs stay in the repo
 
 ## Troubleshooting
 
-### "Permission denied" when running install scripts
-
-The scripts use `sudo` for system-wide installation. You'll be prompted for your password.
-
-### Want to install elsewhere?
-
-```bash
-INSTALL_PREFIX=$HOME/.local ./install-dev.sh
-```
-
-Then add `$HOME/.local/bin` to your PATH.
+- **Permission denied** when copying releases: use a destination you own or `sudo` when appropriate.
+- **Need a different install prefix?** Copy `_build/.../git_foil` wherever you prefer and symlink the `bin/git-foil` executable into your PATH.

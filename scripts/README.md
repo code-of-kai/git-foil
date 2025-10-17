@@ -6,28 +6,23 @@ This directory contains scripts for Git Foil development and release.
 
 ### Simple Development Workflow
 
-**One-time setup:**
+**Daily development (from the git-foil project root):**
 ```bash
-cd /path/to/git-foil
-bin/setup-dev    # Configures git filters
-```
-
-**Daily development:**
-```bash
-bin/git-foil init              # Mix auto-recompiles
-bin/git-foil configure "*.env"
+mix foil init              # Mix auto-recompiles
+mix foil configure "*.env"
 # Edit code, run again - always fresh
 ```
 
 **Pre-release QA:**
 ```bash
-bin/es --version   # Test actual escript
+MIX_ENV=prod mix escript.build
+./git_foil --version   # Test actual escript
 ```
 
 **How it works:**
-- `bin/git-foil` → calls `mix foil` (auto-recompiles)
-- `bin/es` → builds & runs production escript
-- `bin/setup-dev` → one-time git filter config
+- `mix foil` → development runner (auto-recompiles before each call)
+- `mix release --overwrite` → build a release in-place when you need the CLI
+- `mix escript.build` → builds production escript for QA
 
 No special tools needed. Works everywhere.
 

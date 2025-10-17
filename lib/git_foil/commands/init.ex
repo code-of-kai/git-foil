@@ -739,14 +739,10 @@ defmodule GitFoil.Commands.Init do
 
   defp get_executable_path do
     project_root = Path.expand("../../..", __DIR__)
-    bin_path = Path.join(project_root, "bin/git-foil")
 
     cond do
-      Mix.env() == :test ->
+      Mix.env() in [:dev, :test] and File.exists?(Path.join(project_root, "mix.exs")) ->
         "cd '#{project_root}' && mix run -e 'GitFoil.CLI.main(System.argv())' --"
-
-      File.regular?(bin_path) ->
-        bin_path
 
       match?({:ok, path} when path not in ["", "mix"], System.fetch_env("_")) ->
         {:ok, path} = System.fetch_env("_")
@@ -797,87 +793,98 @@ defmodule GitFoil.Commands.Init do
     terminal = Keyword.get(opts, :terminal, Terminal)
     repository = Keyword.get(opts, :repository, Git)
 
-    # Show spinner while discovering files
-    result =
-      terminal.with_spinner("Searching for files to encrypt", fn ->
-        with {:ok, all_files} <- get_all_repository_files(opts),
-             {:ok, matching_files} <- get_files_matching_patterns(all_files, opts),
-             {:ok, eligible_files} <- filter_addable_files(matching_files, repository) do
+    with {:ok, all_files} <- get_all_repository_files(opts),
+         {:ok, matching_files} <- get_files_matching_patterns(all_files, opts) do
+      count = length(matching_files)
+      show_progress? = count > 0
+
+      if show_progress? do
+        IO.puts("🔍  Searching for files to encrypt...")
+        IO.write("   ")
+      end
+
+      case filter_addable_files(matching_files, repository,
+             terminal: terminal,
+             show_progress: show_progress?,
+             total: count
+           ) do
+        {:ok, eligible_files, skipped} ->
+          finish_progress(show_progress?)
+          maybe_warn_skipped_files(skipped)
+
+          if eligible_files != [] do
+            IO.puts(
+              "✅  Found #{terminal.format_number(length(eligible_files))} #{terminal.pluralize("file", length(eligible_files))} to encrypt"
+            )
+          end
+
           {:ok, eligible_files}
-        end
-      end)
 
-    case result do
-      {:ok, eligible_files} ->
-        if eligible_files != [] do
-          IO.puts(
-            "✅  Found #{terminal.format_number(length(eligible_files))} #{terminal.pluralize("file", length(eligible_files))} to encrypt"
-          )
-        end
-
-        {:ok, eligible_files}
-
-      error ->
-        error
+        {:error, reason} ->
+          finish_progress(show_progress?)
+          {:error, reason}
+      end
     end
   end
 
-  defp filter_addable_files(files, Git) do
+  defp filter_addable_files(files, Git, opts) do
+    show_progress? = Keyword.get(opts, :show_progress, false)
+    total = Keyword.get(opts, :total, 1)
+    terminal = Keyword.get(opts, :terminal, Terminal)
+    chunk_size = Keyword.get(opts, :chunk_size, 200)
+
     files
-    |> Enum.filter(&file_addition_candidate?/1)
-    |> filter_not_gitignored()
-    |> filter_by_git_add_dry_run()
+    |> Enum.chunk_every(chunk_size, chunk_size, [])
+    |> Enum.reduce_while({:ok, [], [], 0}, fn chunk, {:ok, acc, skipped, processed} ->
+      {candidates, _non_candidates} = Enum.split_with(chunk, &file_addition_candidate?/1)
+      new_processed = processed + length(chunk)
+      render_progress(show_progress?, terminal, new_processed, total)
+
+      case fetch_ignored_files(candidates) do
+        {:ok, ignored_set} ->
+          kept =
+            Enum.reject(candidates, fn file -> MapSet.member?(ignored_set, file) end)
+
+          updated_acc = Enum.reduce(Enum.reverse(kept), acc, fn file, list -> [file | list] end)
+
+          updated_skipped =
+            Enum.reduce(ignored_set, skipped, fn file, list -> [{file, :ignored} | list] end)
+
+          {:cont, {:ok, updated_acc, updated_skipped, new_processed}}
+
+        {:error, reason} ->
+          {:halt, {:error, reason}}
+      end
+    end)
+    |> case do
+      {:ok, acc, skipped, processed} ->
+        render_progress(show_progress?, terminal, processed, total)
+        {:ok, Enum.reverse(acc), Enum.reverse(skipped)}
+
+      {:error, reason} ->
+        finish_progress(show_progress?)
+        {:error, reason}
+    end
   end
 
-  defp filter_addable_files(files, _mock_repository) do
-    {:ok, files}
+  defp filter_addable_files(files, _mock_repository, _opts) do
+    {:ok, files, []}
   end
 
   defp file_addition_candidate?(file) do
     File.exists?(file) && File.regular?(file)
   end
 
-  defp filter_not_gitignored([]), do: []
+  defp render_progress(false, _terminal, _current, _total), do: :ok
 
-  defp filter_not_gitignored(files) do
-    # Batch check which files are gitignored using a Port to handle large file lists
-    port = Port.open({:spawn, "git check-ignore --stdin"}, [:binary, :exit_status])
-
-    # Send all filenames to git check-ignore via stdin
-    Port.command(port, Enum.join(files, "\n") <> "\n")
-
-    ignored_files = read_port_output(port, "")
-
-    ignored_set =
-      ignored_files
-      |> String.split("\n", trim: true)
-      |> MapSet.new()
-
-    Enum.reject(files, fn file -> MapSet.member?(ignored_set, file) end)
+  defp render_progress(true, terminal, current, total) do
+    current = min(current, total)
+    progress_bar = terminal.progress_bar(current, total)
+    IO.write("\r\e[K   #{progress_bar} #{current}/#{total} files")
   end
 
-  defp filter_by_git_add_dry_run(files) do
-    Enum.reduce_while(files, {:ok, [], []}, fn file, {:ok, acc, skipped} ->
-      case git_add_dry_run(file) do
-        :ok ->
-          {:cont, {:ok, [file | acc], skipped}}
-
-        {:ignored, message} ->
-          {:cont, {:ok, acc, [{file, message} | skipped]}}
-
-        {:error, reason} ->
-          {:halt, {:error, "git add --dry-run failed for #{file}: #{reason}"}}
-      end
-    end)
-    |> case do
-      {:ok, acc, skipped} ->
-        maybe_warn_skipped_files(skipped)
-        {:ok, Enum.reverse(acc)}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
+  defp finish_progress(false), do: :ok
+  defp finish_progress(true), do: IO.write("\n")
 
   defp maybe_warn_skipped_files([]), do: :ok
 
@@ -905,42 +912,41 @@ defmodule GitFoil.Commands.Init do
     IO.puts("")
   end
 
-  defp git_add_dry_run(file) do
-    case System.cmd("git", ["add", "--dry-run", "--", file], stderr_to_stdout: true) do
-      {_, 0} ->
-        :ok
+  defp fetch_ignored_files([]), do: {:ok, MapSet.new()}
 
-      {output, status} ->
-        trimmed = String.trim(output)
+  defp fetch_ignored_files(files) do
+    port = Port.open({:spawn, "git check-ignore --stdin"}, [:binary, :exit_status])
+    Port.command(port, Enum.join(files, "\n") <> "\n")
 
-        cond do
-          trimmed == "" && status != 0 ->
-            {:error, "exit status #{status}"}
+    case collect_port_output(port, "") do
+      {:ok, output, status} when status in [0, 1] ->
+        ignored =
+          output
+          |> String.split("\n", trim: true)
+          |> MapSet.new()
 
-          String.contains?(trimmed, "ignored by one of your .gitignore files") ->
-            {:ignored, trimmed}
+        {:ok, ignored}
 
-          String.contains?(trimmed, "nothing added (use -u to track)") ->
-            {:ignored, trimmed}
+      {:ok, error_output, status} ->
+        {:error, "git check-ignore failed (status #{status}): #{String.trim(error_output)}"}
 
-          true ->
-            {:error, trimmed}
-        end
+      {:error, reason} ->
+        {:error, "git check-ignore timeout: #{inspect(reason)}"}
     end
   end
 
-  defp read_port_output(port, acc) do
+  defp collect_port_output(port, acc) do
     receive do
       {^port, {:data, data}} ->
-        read_port_output(port, acc <> data)
+        collect_port_output(port, acc <> data)
 
-      {^port, {:exit_status, _status}} ->
+      {^port, {:exit_status, status}} ->
         Port.close(port)
-        acc
+        {:ok, acc, status}
     after
-      5000 ->
+      30_000 ->
         Port.close(port)
-        acc
+        {:error, :timeout}
     end
   end
 
