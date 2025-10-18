@@ -1,0 +1,10 @@
+# Write your commit subject on the first line. Keep it short (<= 72 chars).
+# Example: Fix encoding issue in filename handling
+
+# Leave a blank line, then add optional body wrapped to 72 characters.
+# Describe what changed and why. Reference issues in the form `Refs #123`.
+
+# IMPORTANT: Do NOT add Co-authored-by trailers for AI assistants.
+# Commits that mention `Co-authored-by: Claude` or similar will be rejected
+# by project automation to keep contributor stats accurate.
+
