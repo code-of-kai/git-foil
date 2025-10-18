@@ -5,7 +5,7 @@ defmodule GitFoil.Application do
 
   @impl true
   def start(_type, _args) do
-    _ = GitFoil.Legacy.Cleanup.run()
+    _ = GitFoil.Native.RustlerLoader.ensure_loaded()
     _ = GitFoil.Native.PqcleanLoader.ensure_loaded()
 
     # Start a minimal supervisor (required for OTP application)

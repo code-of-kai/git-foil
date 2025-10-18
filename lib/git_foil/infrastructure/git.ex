@@ -81,14 +81,9 @@ defmodule GitFoil.Infrastructure.Git do
   @impl true
   @spec list_files() :: {:ok, [String.t()]} | {:error, String.t()}
   def list_files do
-    case System.cmd("git", ["ls-files"], stderr_to_stdout: true) do
+    case System.cmd("git", ["ls-files", "-z"], stderr_to_stdout: true) do
       {output, 0} ->
-        files =
-          output
-          |> String.split("\n", trim: true)
-          |> Enum.reject(&(&1 == ""))
-
-        {:ok, files}
+        {:ok, parse_null_output(output)}
 
       {error, _} ->
         {:error, "Failed to list repository files: #{String.trim(error)}"}
@@ -103,23 +98,20 @@ defmodule GitFoil.Infrastructure.Git do
   @spec list_all_files() :: {:ok, [String.t()]} | {:error, String.t()}
   def list_all_files do
     # Get tracked files
-    tracked_result = System.cmd("git", ["ls-files"], stderr_to_stdout: true)
+    tracked_result = System.cmd("git", ["ls-files", "-z"], stderr_to_stdout: true)
     # Get untracked files (excluding those in .gitignore)
-    untracked_result = System.cmd("git", ["ls-files", "--others", "--exclude-standard"], stderr_to_stdout: true)
+    untracked_result =
+      System.cmd(
+        "git",
+        ["ls-files", "--others", "--exclude-standard", "-z"],
+        stderr_to_stdout: true
+      )
 
     case {tracked_result, untracked_result} do
       {{tracked_output, 0}, {untracked_output, 0}} ->
-        tracked_files = tracked_output
-                       |> String.split("\n", trim: true)
-                       |> Enum.reject(&(&1 == ""))
-
-        untracked_files = untracked_output
-                         |> String.split("\n", trim: true)
-                         |> Enum.reject(&(&1 == ""))
-
-        all_files = (tracked_files ++ untracked_files) |> Enum.uniq()
-
-        {:ok, all_files}
+        tracked_files = parse_null_output(tracked_output)
+        untracked_files = parse_null_output(untracked_output)
+        {:ok, Enum.uniq(tracked_files ++ untracked_files)}
 
       {{error, _}, _} ->
         {:error, "Failed to list tracked files: #{String.trim(error)}"}
@@ -169,16 +161,20 @@ defmodule GitFoil.Infrastructure.Git do
       case System.cmd("git", ["check-attr", attr] ++ chunk, stderr_to_stdout: true) do
         {output, 0} ->
           # Parse output: each line is "filename: attr: value"
-          results = output
-          |> String.split("\n", trim: true)
-          |> Enum.map(fn line ->
-            # Split on first two colons to handle filenames with colons
-            case String.split(line, ": ", parts: 3) do
-              [file, ^attr, value] -> {file, String.trim(value)}
-              _ -> nil
-            end
-          end)
-          |> Enum.reject(&is_nil/1)
+          results =
+            output
+            |> String.split("\n", trim: true)
+            |> Enum.map(fn line ->
+              case String.split(line, ": ", parts: 3) do
+                [file, ^attr, value] ->
+                  normalized_file = normalize_git_output_path(file)
+                  {normalized_file, String.trim(value)}
+
+                _ ->
+                  nil
+              end
+            end)
+            |> Enum.reject(&is_nil/1)
 
           {:cont, {:ok, acc ++ results}}
 
@@ -228,5 +224,39 @@ defmodule GitFoil.Infrastructure.Git do
       {:ok, _value} -> true
       _ -> false
     end
+  end
+
+  defp parse_null_output(output) do
+    output
+    |> :binary.split(<<0>>, [:global])
+    |> Enum.reject(&(&1 == ""))
+  end
+
+  defp normalize_git_output_path(path) do
+    path
+    |> maybe_strip_quotes()
+    |> unescape_octal_sequences()
+    |> replace_common_escapes()
+  end
+
+  defp maybe_strip_quotes("\"" <> rest) do
+    rest
+    |> String.trim_trailing("\"")
+  end
+
+  defp maybe_strip_quotes(path), do: path
+
+  defp unescape_octal_sequences(path) do
+    Regex.replace(~r/\\([0-7]{3})/, path, fn _, oct ->
+      oct
+      |> String.to_integer(8)
+      |> :binary.encode_unsigned()
+    end)
+  end
+
+  defp replace_common_escapes(path) do
+    path
+    |> String.replace("\\\\", "\\")
+    |> String.replace("\\\"", "\"")
   end
 end

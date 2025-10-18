@@ -4,7 +4,7 @@ defmodule GitFoil.MixProject do
   def project do
     [
       app: :git_foil,
-      version: "0.8.1",
+      version: "0.8.2",
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -95,8 +95,8 @@ defmodule GitFoil.MixProject do
       {:stream_data, "~> 1.1", only: :test},
 
       # Tidewave MCP server for development
-      {:tidewave, github: "tidewave-ai/tidewave_phoenix", only: :dev},
-      {:bandit, "~> 1.5", only: :dev}
+      {:tidewave, github: "tidewave-ai/tidewave_phoenix", only: :dev, runtime: false},
+      {:bandit, "~> 1.5", only: :dev, runtime: false}
     ]
   end
 

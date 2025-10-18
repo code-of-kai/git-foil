@@ -174,22 +174,8 @@ defmodule GitFoil.Commands.Encrypt do
   defp maybe_generate_new_key({:error, reason}), do: {:error, reason}
 
   defp encrypt_files do
-    # Get ALL tracked files (Git will apply clean filter based on .gitattributes)
-    # Also get untracked files to include new files
-    tracked_result = System.cmd("git", ["ls-files"], stderr_to_stdout: true)
-    untracked_result = System.cmd("git", ["ls-files", "--others", "--exclude-standard"], stderr_to_stdout: true)
-
-    case {tracked_result, untracked_result} do
-      {{tracked_output, 0}, {untracked_output, 0}} ->
-        tracked_files = tracked_output
-                       |> String.split("\n", trim: true)
-                       |> Enum.reject(&(&1 == ""))
-
-        untracked_files = untracked_output
-                         |> String.split("\n", trim: true)
-                         |> Enum.reject(&(&1 == ""))
-
-        all_files = (tracked_files ++ untracked_files) |> Enum.uniq()
+    case GitFoil.Infrastructure.Git.list_all_files() do
+      {:ok, all_files} ->
         total = length(all_files)
 
         if total == 0 do
@@ -199,11 +185,8 @@ defmodule GitFoil.Commands.Encrypt do
           add_files_with_progress(all_files, total)
         end
 
-      {{error, _}, _} ->
-        {:error, "Failed to list tracked files: #{String.trim(error)}"}
-
-      {_, {error, _}} ->
-        {:error, "Failed to list untracked files: #{String.trim(error)}"}
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

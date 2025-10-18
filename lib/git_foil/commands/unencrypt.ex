@@ -8,6 +8,7 @@ defmodule GitFoil.Commands.Unencrypt do
 
   alias GitFoil.Helpers.UIPrompts
   alias GitFoil.Infrastructure.Terminal
+  alias GitFoil.Infrastructure.Git
 
   @doc """
   Unencrypt all files and remove GitFoil from the repository.
@@ -151,15 +152,8 @@ defmodule GitFoil.Commands.Unencrypt do
     # Get list of files that have the gitfoil filter attribute
     # This must be called BEFORE removing .gitattributes
     # Only get tracked files - untracked files aren't in Git's index and don't need conversion
-    tracked_result = System.cmd("git", ["ls-files"], stderr_to_stdout: true)
-
-    case tracked_result do
-      {tracked_output, 0} ->
-        tracked_files =
-          tracked_output
-          |> String.split("\n", trim: true)
-          |> Enum.reject(&(&1 == ""))
-
+    case Git.list_files() do
+      {:ok, tracked_files} ->
         total_files = length(tracked_files)
 
         # Use batch check-attr for much faster processing (100 files at a time instead of 1)
@@ -198,8 +192,8 @@ defmodule GitFoil.Commands.Unencrypt do
             {:error, "Failed to check file attributes: #{reason}"}
         end
 
-      {error, _} ->
-        {:error, "Failed to list tracked files: #{String.trim(error)}"}
+      {:error, reason} ->
+        {:error, "Failed to list tracked files: #{reason}"}
     end
   end
 
@@ -210,7 +204,6 @@ defmodule GitFoil.Commands.Unencrypt do
            System.cmd("git", ["config", "filter.gitfoil.clean", "cat"], stderr_to_stdout: true),
          {_, 0} <-
            System.cmd("git", ["config", "filter.gitfoil.smudge", "cat"], stderr_to_stdout: true) do
-      GitFoil.Legacy.Cleanup.cleanup_git_filter()
       :ok
     else
       {error, _} -> {:error, "Failed to disable filters: #{String.trim(error)}"}
@@ -250,10 +243,13 @@ defmodule GitFoil.Commands.Unencrypt do
       # Remove from index, then re-add with disabled filters
       # This forces git to store the plaintext working directory version
       # Use -f to force removal even if there are staged/unstaged changes
-      case System.cmd("git", ["rm", "--cached", "-f", file], stderr_to_stdout: true) do
+      rm_args = ["rm", "--cached", "-f", "--", file]
+
+      case System.cmd("git", rm_args, stderr_to_stdout: true) do
         {_, 0} ->
-          # Use -f to force add even if file is in .gitignore
-          case System.cmd("git", ["add", "-f", file], stderr_to_stdout: true) do
+      add_args = ["add", "-f", "--", file]
+
+          case System.cmd("git", add_args, stderr_to_stdout: true) do
             {_, 0} ->
               {:cont, :ok}
 

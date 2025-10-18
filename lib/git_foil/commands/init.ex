@@ -741,12 +741,11 @@ defmodule GitFoil.Commands.Init do
     project_root = Path.expand("../../..", __DIR__)
 
     cond do
-      Mix.env() in [:dev, :test] and File.exists?(Path.join(project_root, "mix.exs")) ->
+      running_from_source?(project_root) ->
         "cd '#{project_root}' && mix run -e 'GitFoil.CLI.main(System.argv())' --"
 
-      match?({:ok, path} when path not in ["", "mix"], System.fetch_env("_")) ->
-        {:ok, path} = System.fetch_env("_")
-        path
+      exec_path = current_exec_path() ->
+        exec_path
 
       executable = System.find_executable("git-foil") ->
         executable
@@ -756,6 +755,28 @@ defmodule GitFoil.Commands.Init do
 
       true ->
         "git-foil"
+    end
+  end
+
+  defp running_from_source?(project_root) do
+    case {maybe_mix_env(), File.exists?(Path.join(project_root, "mix.exs"))} do
+      {{:ok, env}, true} when env in [:dev, :test] -> true
+      _ -> false
+    end
+  end
+
+  defp maybe_mix_env do
+    if Code.ensure_loaded?(Mix) and function_exported?(Mix, :env, 0) do
+      {:ok, Mix.env()}
+    else
+      :error
+    end
+  end
+
+  defp current_exec_path do
+    case System.fetch_env("_") do
+      {:ok, path} when path not in ["", "mix"] -> path
+      _ -> nil
     end
   end
 
@@ -915,39 +936,23 @@ defmodule GitFoil.Commands.Init do
   defp fetch_ignored_files([]), do: {:ok, MapSet.new()}
 
   defp fetch_ignored_files(files) do
-    port = Port.open({:spawn, "git check-ignore --stdin"}, [:binary, :exit_status])
-    Port.command(port, Enum.join(files, "\n") <> "\n")
+    files
+    |> Enum.chunk_every(100)
+    |> Enum.reduce_while({:ok, MapSet.new()}, fn chunk, {:ok, acc} ->
+      case System.cmd("git", ["check-ignore"] ++ chunk, stderr_to_stdout: true) do
+        {output, status} when status in [0, 1] ->
+          ignored =
+            output
+            |> String.split("\n", trim: true)
+            |> MapSet.new()
 
-    case collect_port_output(port, "") do
-      {:ok, output, status} when status in [0, 1] ->
-        ignored =
-          output
-          |> String.split("\n", trim: true)
-          |> MapSet.new()
+          {:cont, {:ok, MapSet.union(acc, ignored)}}
 
-        {:ok, ignored}
-
-      {:ok, error_output, status} ->
-        {:error, "git check-ignore failed (status #{status}): #{String.trim(error_output)}"}
-
-      {:error, reason} ->
-        {:error, "git check-ignore timeout: #{inspect(reason)}"}
-    end
-  end
-
-  defp collect_port_output(port, acc) do
-    receive do
-      {^port, {:data, data}} ->
-        collect_port_output(port, acc <> data)
-
-      {^port, {:exit_status, status}} ->
-        Port.close(port)
-        {:ok, acc, status}
-    after
-      30_000 ->
-        Port.close(port)
-        {:error, :timeout}
-    end
+        {error_output, status} ->
+          message = "git check-ignore failed (status #{status}): #{String.trim(error_output)}"
+          {:halt, {:error, message}}
+      end
+    end)
   end
 
   defp get_all_repository_files(opts) do
