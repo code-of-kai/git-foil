@@ -54,8 +54,11 @@ defmodule GitFoil.Native.PqcleanLoader do
           {:error, {:embedded_write_failed, _, _}} ->
             stage_and_reload()
 
+          {:error, :dev_build_not_found} ->
+            stage_and_reload()
+
           {:error, reason} ->
-            Logger.error("Failed to prepare pqclean NIF: #{inspect(reason)}")
+            log_prepare_failure(reason)
             {:error, reason}
         end
 
@@ -70,7 +73,7 @@ defmodule GitFoil.Native.PqcleanLoader do
       :ok
     else
       {:error, reason} ->
-        Logger.error("Failed to stage embedded pqclean NIF: #{inspect(reason)}")
+        log_stage_failure(reason)
         {:error, reason}
     end
   end
@@ -142,7 +145,7 @@ defmodule GitFoil.Native.PqcleanLoader do
         end
 
       _ ->
-        {:error, :nif_binary_missing}
+        {:error, :dev_build_not_found}
     end
   end
 
@@ -379,4 +382,19 @@ defmodule GitFoil.Native.PqcleanLoader do
   defp embedded_nif_available? do
     is_binary(@embedded_nif) and byte_size(@embedded_nif) > 0
   end
+
+  defp log_prepare_failure(reason) do
+    Logger.log(log_level(reason), "Failed to prepare pqclean NIF: #{inspect(reason)}")
+  end
+
+  defp log_stage_failure(reason) do
+    Logger.log(log_level(reason), "Failed to stage embedded pqclean NIF: #{inspect(reason)}")
+  end
+
+  defp log_level(:dev_build_not_found), do: :debug
+  defp log_level({:embedded_write_failed, _, _}), do: :error
+  defp log_level({:app_load_failed, _}), do: :error
+  defp log_level({:nif_copy_failed, _}), do: :error
+  defp log_level({:object_code_not_found, _}), do: :error
+  defp log_level(_), do: :error
 end

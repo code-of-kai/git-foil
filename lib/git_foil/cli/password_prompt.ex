@@ -60,16 +60,57 @@ defmodule GitFoil.CLI.PasswordPrompt do
   # Reads password from stdin (visible)
   @spec read_password(String.t()) :: {:ok, String.t()} | {:error, term()}
   defp read_password(prompt) do
-    case IO.gets(prompt) do
-      :eof ->
-        {:error, :eof}
+    with {:ok, raw} <- read_from_tty(prompt) do
+      {:ok, String.trim(raw)}
+    end
+  end
 
-      {:error, reason} ->
-        {:error, reason}
+  defp read_from_tty(prompt) do
+    case open_tty() do
+      {:ok, tty} ->
+        try do
+          case IO.gets(tty, prompt) do
+            :eof ->
+              {:error, :eof}
 
-      line when is_binary(line) ->
-        password = String.trim(line)
-        {:ok, password}
+            {:error, reason} ->
+              {:error, reason}
+
+            line when is_binary(line) ->
+              {:ok, line}
+          end
+        after
+          File.close(tty)
+        end
+
+      {:error, _reason} ->
+        # Fallback to standard IO (works when piping passwords)
+        case IO.gets(prompt) do
+          :eof ->
+            {:error, :eof}
+
+          {:error, reason} ->
+            {:error, reason}
+
+          line when is_binary(line) ->
+            {:ok, line}
+        end
+    end
+  end
+
+  defp open_tty do
+    cond do
+      tty_path = System.get_env("GIT_FOIL_TTY") ->
+        File.open(tty_path, [:read, :write])
+
+      match?({:unix, _}, :os.type()) ->
+        File.open("/dev/tty", [:read, :write])
+
+      match?({:win32, _}, :os.type()) ->
+        File.open("CONIN$", [:read, :write])
+
+      true ->
+        {:error, :no_tty}
     end
   end
 

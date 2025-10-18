@@ -35,7 +35,8 @@ defmodule GitFoil.Infrastructure.Git do
   def init_repository do
     case System.cmd("git", ["init"], stderr_to_stdout: true) do
       {output, 0} ->
-        {:ok, String.trim(output)}
+        suppress_default_branch_hint()
+        {:ok, filter_git_advice(output)}
 
       {error, _} ->
         {:error, String.trim(error)}
@@ -224,6 +225,21 @@ defmodule GitFoil.Infrastructure.Git do
       {:ok, _value} -> true
       _ -> false
     end
+  end
+
+  defp suppress_default_branch_hint do
+    case System.cmd("git", ["config", "advice.defaultBranchName", "false"], stderr_to_stdout: true) do
+      {_output, 0} -> :ok
+      {_output, _} -> :ok
+    end
+  end
+
+  defp filter_git_advice(output) do
+    output
+    |> String.split("\n")
+    |> Enum.reject(&String.starts_with?(&1, "hint:"))
+    |> Enum.join("\n")
+    |> String.trim()
   end
 
   defp parse_null_output(output) do
