@@ -138,7 +138,7 @@ defmodule GitFoil.Native.RustlerLoader do
         File.cp(source, target)
 
       true ->
-        {:error, :app_not_found}
+        write_stub_app(target)
     end
   end
 
@@ -173,5 +173,21 @@ defmodule GitFoil.Native.RustlerLoader do
 
   defp find_app_on_disk do
     Enum.find(@app_candidates, &File.exists?/1)
+  end
+
+  defp write_stub_app(target) do
+    stub = """
+    {application, git_foil,
+     [{description, "GitFoil runtime stub"},
+      {vsn, "0.0.0"},
+      {modules, []},
+      {registered, []},
+      {applications, [kernel,stdlib,elixir,logger]},
+      {env, []},
+      {runtime_dependencies, []}
+     ]}.
+    """
+
+    File.write(target, stub)
   end
 end

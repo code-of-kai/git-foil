@@ -4,7 +4,7 @@ defmodule GitFoil.MixProject do
   def project do
     [
       app: :git_foil,
-      version: "0.8.2",
+      version: "0.8.4",
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
