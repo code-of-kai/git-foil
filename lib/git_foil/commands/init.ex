@@ -281,16 +281,15 @@ defmodule GitFoil.Commands.Init do
         encrypted_count = count_encrypted_candidates(opts)
 
         IO.puts("""
-        
-        🔍  GitFoil detected an existing encrypted repository.
-        
-           • Encryption key: #{key_summary}
-           • Patterns configured: #{pattern_text}
-           • Encrypted tracked files found: #{encrypted_count}
-        
-        GitFoil can decrypt the working tree now so the files are readable. No key changes
-        will be made unless you run `git-foil init --force`.
-        """)
+🔍  GitFoil detected an existing encrypted repository.
+
+   • Encryption key stored at: #{key_summary}
+   • Patterns configured: #{pattern_text}
+   • Encrypted tracked files detected: #{encrypted_count}
+
+Run continues so the working tree can be decrypted and made readable.
+(Use `git-foil init --force` if you actually want to replace the encryption key.)
+""")
 
         :ok
 
@@ -423,6 +422,7 @@ defmodule GitFoil.Commands.Init do
     use_password = Keyword.get(opts, :use_password, false)
     plaintext_path = UIPrompts.master_key_info(repository: repository).path
     encrypted_path = encrypted_key_path(repository)
+    filters_configured? = git_filters_configured?(repository)
 
     {existing_location_line, new_storage_line} =
       if use_password do
@@ -438,10 +438,21 @@ defmodule GitFoil.Commands.Init do
       end
 
     IO.puts("")
-    IO.puts("🔐  GitFoil Initialization")
-    IO.puts("")
-    IO.puts("This will:")
-    IO.puts("")
+
+    if key_action == :use_existing and filters_configured? do
+      IO.puts("🔓  Prepare working tree for plaintext")
+      IO.puts("")
+      IO.puts("GitFoil will refresh tracked files so they decrypt locally.")
+      IO.puts("This does not modify your encryption key or patterns.")
+      IO.puts("")
+      IO.puts("Actions:")
+      IO.puts("")
+    else
+      IO.puts("🔐  GitFoil Initialization")
+      IO.puts("")
+      IO.puts("This will:")
+      IO.puts("")
+    end
 
     # Show what will happen with encryption keys
     case key_action do
@@ -456,6 +467,9 @@ defmodule GitFoil.Commands.Init do
         IO.puts("      → Creates quantum-resistant keypair (Kyber1024)")
         IO.puts(new_storage_line)
 
+      :use_existing when filters_configured? ->
+        IO.puts("   🔑  Keep existing encryption key in place")
+        IO.puts("      → Key already stored at #{plaintext_path}")
       :use_existing ->
         IO.puts("   🔑  Use existing encryption key")
         IO.puts(existing_location_line)
@@ -463,13 +477,10 @@ defmodule GitFoil.Commands.Init do
 
     IO.puts("")
 
-    # Show what will happen with Git configuration
-    filters_configured? = git_filters_configured?(repository)
-
-    if filters_configured? do
-      IO.puts("   🔒  Git already configured for automatic encryption")
-      IO.puts("      → Files encrypt automatically when you git add or git commit")
-      IO.puts("      → Files decrypt automatically when you git checkout or git pull")
+    if key_action == :use_existing and filters_configured? do
+      IO.puts("   🔓  Decrypt working tree")
+      IO.puts("      → Runs 'git checkout -- .' to rewrite tracked files locally")
+      IO.puts("      → You can cancel if you prefer to decrypt later")
     else
       IO.puts("   🔒  Configure Git for automatic encryption")
       IO.puts("      → Files will encrypt automatically when you git add or git commit")
@@ -480,7 +491,14 @@ defmodule GitFoil.Commands.Init do
     IO.puts("")
     UIPrompts.print_separator()
 
-    answer = terminal.safe_gets("\nProceed with initialization? [Y/n]: ") |> String.downcase()
+    prompt_label =
+      if key_action == :use_existing and filters_configured? do
+        "Decrypt working tree now? [Y/n]: "
+      else
+        "Proceed with initialization? [Y/n]: "
+      end
+
+    answer = terminal.safe_gets("\n" <> prompt_label) |> String.downcase()
 
     if affirmed?(answer) do
       IO.puts("")
