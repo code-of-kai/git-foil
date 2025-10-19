@@ -234,6 +234,34 @@ defmodule GitFoil.Infrastructure.Git do
     end
   end
 
+  @doc """
+  Checks whether the working tree has uncommitted changes.
+  """
+  @spec working_tree_clean?() :: {:ok, boolean()} | {:error, String.t()}
+  def working_tree_clean? do
+    case System.cmd("git", ["status", "--porcelain"], stderr_to_stdout: true) do
+      {output, 0} ->
+        {:ok, String.trim(output) == ""}
+
+      {error, _} ->
+        {:error, String.trim(error)}
+    end
+  end
+
+  @doc """
+  Re-checks out the working tree so Git filters can rewrite tracked files.
+  """
+  @spec checkout_working_tree() :: :ok | {:error, String.t()}
+  def checkout_working_tree do
+    case System.cmd("git", ["checkout", "--", "."], stderr_to_stdout: true) do
+      {_, 0} ->
+        :ok
+
+      {error, _} ->
+        {:error, String.trim(error)}
+    end
+  end
+
   defp filter_git_advice(output) do
     output
     |> String.split("\n")

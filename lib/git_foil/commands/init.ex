@@ -52,7 +52,7 @@ defmodule GitFoil.Commands.Init do
          :ok <- confirm_initialization(key_action, force, opts),
          :ok <- generate_keypair_and_configure_filters(key_action, opts),
          {:ok, pattern_status} <- maybe_configure_patterns(skip_patterns, opts),
-         {:ok, encrypted} <- maybe_encrypt_files(pattern_status, opts) do
+         {:ok, encrypted} <- maybe_process_existing_files(key_action, pattern_status, opts) do
       {:ok, success_message(pattern_status, encrypted, opts)}
     else
       {:ok, message} -> {:ok, message}
@@ -261,15 +261,21 @@ defmodule GitFoil.Commands.Init do
 
   defp check_already_fully_initialized(true = _force, _opts), do: :ok
 
-  defp check_already_fully_initialized(false = _force, _opts) do
+  defp check_already_fully_initialized(false = _force, opts) do
+    repository = Keyword.get(opts, :repository, Git)
+
     has_key? =
       File.exists?(".git/git_foil/master.key") or
         File.exists?(".git/git_foil/master.key.enc")
 
     {has_patterns?, pattern_count} = check_gitattributes_patterns()
 
-    case {has_key?, has_patterns?} do
-      {true, true} ->
+    filters_configured? =
+      repository.config_exists?("filter.gitfoil.clean") and
+        repository.config_exists?("filter.gitfoil.smudge")
+
+    case {has_key?, has_patterns?, filters_configured?} do
+      {true, true, true} ->
         pattern_text = if pattern_count == 1, do: "1 pattern", else: "#{pattern_count} patterns"
         key_summary = UIPrompts.master_key_summary()
 
@@ -810,6 +816,29 @@ defmodule GitFoil.Commands.Init do
     end
   end
 
+  defp maybe_process_existing_files(:use_existing, pattern_status, opts) do
+    case maybe_refresh_working_tree(pattern_status, false, opts) do
+      {:ok, _} -> {:ok, false}
+    end
+  end
+
+  defp maybe_process_existing_files(_key_action, pattern_status, opts) do
+    with {:ok, encrypted} <- maybe_encrypt_files(pattern_status, opts),
+         {:ok, _} <- maybe_refresh_working_tree(pattern_status, encrypted, opts) do
+      {:ok, encrypted}
+    end
+  end
+
+  defp maybe_refresh_working_tree(:skipped, _encrypted, _opts), do: {:ok, false}
+  defp maybe_refresh_working_tree(_pattern_status, true, _opts), do: {:ok, false}
+
+  defp maybe_refresh_working_tree(_pattern_status, _encrypted, opts) do
+    repository = Keyword.get(opts, :repository, Git)
+    terminal = Keyword.get(opts, :terminal, Terminal)
+
+    prompt_refresh_working_tree(repository, terminal)
+  end
+
   defp discover_files_to_encrypt(opts) do
     terminal = Keyword.get(opts, :terminal, Terminal)
     repository = Keyword.get(opts, :repository, Git)
@@ -1056,6 +1085,38 @@ defmodule GitFoil.Commands.Init do
 
   defp add_files_with_progress(files, total, opts) do
     FileEncryption.add_files_with_progress(files, total, opts)
+  end
+
+  defp prompt_refresh_working_tree(repository, terminal) do
+    IO.puts("")
+    IO.puts("💡  Encrypted files detected in the working directory.")
+    IO.puts("    GitFoil can refresh them so they decrypt locally.")
+    IO.puts("    This will overwrite uncommitted changes to matching files.")
+    IO.puts("")
+    UIPrompts.print_separator()
+
+    answer =
+      terminal.safe_gets("\nDecrypt files now? [Y/n]: ")
+      |> String.downcase()
+
+    if affirmed?(answer) do
+      case repository.checkout_working_tree() do
+        :ok ->
+          IO.puts("")
+          IO.puts("✅  Working tree refreshed. Files decrypted locally.\n")
+          {:ok, true}
+
+        {:error, reason} ->
+          IO.puts("")
+          IO.puts("⚠️  Failed to refresh working tree: #{UIPrompts.format_error(reason)}")
+          IO.puts("    Run 'git checkout -- .' manually when ready.\n")
+          {:ok, false}
+      end
+    else
+      IO.puts("")
+      IO.puts("ℹ️  Skipping working tree refresh. Ciphertext will remain until you run 'git checkout -- .'.\n")
+      {:ok, false}
+    end
   end
 
   # ============================================================================
