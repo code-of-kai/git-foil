@@ -278,27 +278,20 @@ defmodule GitFoil.Commands.Init do
       {true, true, true} ->
         pattern_text = if pattern_count == 1, do: "1 pattern", else: "#{pattern_count} patterns"
         key_summary = UIPrompts.master_key_summary()
+        encrypted_count = count_encrypted_candidates(opts)
 
-        message = """
-        ✅  GitFoil is already initialized in this repository.
+        IO.puts("""
+        
+        🔍  GitFoil detected an existing encrypted repository.
+        
+           • Encryption key: #{key_summary}
+           • Patterns configured: #{pattern_text}
+           • Encrypted tracked files found: #{encrypted_count}
+        
+        GitFoil can decrypt the working tree now so the files are readable. No key changes
+        will be made unless you run `git-foil init --force`.
+        """)
 
-           🔑  Encryption key: #{key_summary}
-           📝  Patterns: #{pattern_text} configured in .gitattributes
-
-        💡  Need to make changes?
-
-           • To change which files are encrypted:
-             git-foil configure
-
-           • To create a new encryption key:
-             git-foil init --force
-             (Your old key will be backed up automatically)
-
-           • To see all available commands:
-             git-foil help
-        """
-
-        IO.puts("\n" <> message <> "\n")
         :ok
 
       _ ->
@@ -323,86 +316,22 @@ defmodule GitFoil.Commands.Init do
     end
   end
 
-  defp check_existing_initialization(force, opts) do
+  defp check_existing_initialization(force, _opts) do
     # Check both plaintext and password-protected storage
     has_plaintext = FileKeyStorage.initialized?()
     has_password_protected = PasswordProtectedKeyStorage.initialized?()
 
     case {has_plaintext, has_password_protected, force} do
       {false, false, _} ->
-        # No existing key, generate new
         {:ok, :generate_new}
 
       {_, _, true} ->
-        # Force flag set, overwrite existing key
         IO.puts("⚠️     Overwriting existing encryption key (--force flag)\n")
         {:ok, :generate_new}
 
       _ ->
-        # Existing key found, prompt user
-        prompt_key_choice(opts)
-    end
-  end
-
-  defp prompt_key_choice(opts) do
-    terminal = Keyword.get(opts, :terminal, Terminal)
-
-    case UIPrompts.prompt_key_choice(terminal: terminal, purpose: "initialize GitFoil") do
-      {:use_existing} ->
         IO.puts("\n✅  Using existing encryption key\n")
         {:ok, :use_existing}
-
-      {:create_new} ->
-        case backup_existing_key() do
-          {:ok, backup_path} ->
-            IO.puts(UIPrompts.format_key_backup_message(backup_path))
-            {:ok, :generate_new}
-
-          {:error, reason} ->
-            {:error,
-             UIPrompts.format_error_message(
-               "Failed to backup existing key: #{UIPrompts.format_error(reason)}"
-             )}
-        end
-
-      {:invalid, message} ->
-        IO.puts("\n❌  #{message}. Please run init again.\n")
-        {:error, message}
-    end
-  end
-
-  defp backup_existing_key do
-    timestamp =
-      DateTime.utc_now()
-      |> DateTime.to_iso8601()
-      |> String.replace(":", "-")
-      |> String.replace(".", "-")
-
-    # Determine which key file exists
-    {source_path, backup_filename} =
-      cond do
-        File.exists?(".git/git_foil/master.key.enc") ->
-          {".git/git_foil/master.key.enc", "master.key.enc.backup.#{timestamp}"}
-
-        File.exists?(".git/git_foil/master.key") ->
-          {".git/git_foil/master.key", "master.key.backup.#{timestamp}"}
-
-        true ->
-          {nil, nil}
-      end
-
-    if source_path do
-      backup_path = ".git/git_foil/#{backup_filename}"
-
-      case File.rename(source_path, backup_path) do
-        :ok ->
-          {:ok, backup_path}
-
-        {:error, reason} ->
-          {:error, UIPrompts.format_error(reason)}
-      end
-    else
-      {:error, "No existing key found to backup"}
     end
   end
 
@@ -837,7 +766,13 @@ defmodule GitFoil.Commands.Init do
     repository = Keyword.get(opts, :repository, Git)
     terminal = Keyword.get(opts, :terminal, Terminal)
 
-    prompt_refresh_working_tree(repository, terminal)
+    with {:ok, all_files} <- get_all_repository_files(opts),
+         {:ok, matching_files} <- get_files_matching_patterns(all_files, opts),
+         true <- matching_files != [] do
+      prompt_refresh_working_tree(repository, terminal, length(matching_files))
+    else
+      _ -> {:ok, false}
+    end
   end
 
   defp discover_files_to_encrypt(opts) do
@@ -1088,10 +1023,19 @@ defmodule GitFoil.Commands.Init do
     FileEncryption.add_files_with_progress(files, total, opts)
   end
 
-  defp prompt_refresh_working_tree(repository, terminal) do
+  defp count_encrypted_candidates(opts) do
+    with {:ok, all_files} <- get_all_repository_files(opts),
+         {:ok, matching_files} <- get_files_matching_patterns(all_files, opts) do
+      length(matching_files)
+    else
+      _ -> 0
+    end
+  end
+
+  defp prompt_refresh_working_tree(repository, terminal, total) do
     IO.puts("")
-    IO.puts("💡  Encrypted files detected in the working directory.")
-    IO.puts("    GitFoil can refresh them so they decrypt locally.")
+    IO.puts("💡  Found #{total} encrypted tracked files in this working tree.")
+    IO.puts("    GitFoil can decrypt them now so every file is readable.")
     IO.puts("    This will overwrite uncommitted changes to matching files.")
     IO.puts("")
     UIPrompts.print_separator()
