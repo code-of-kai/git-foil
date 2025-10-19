@@ -298,7 +298,8 @@ defmodule GitFoil.Commands.Init do
              git-foil help
         """
 
-        {:ok, message}
+        IO.puts("\n" <> message <> "\n")
+        :ok
 
       _ ->
         :ok
