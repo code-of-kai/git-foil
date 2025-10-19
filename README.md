@@ -309,11 +309,9 @@ mkdir -p .git/git_foil
 cp ~/Downloads/master.key .git/git_foil/master.key
 chmod 600 .git/git_foil/master.key
 
-# 4. Initialize GitFoil (detects existing key, configures filters)
+# 4. Initialize GitFoil (detects key, offers to decrypt working tree)
 git-foil init
-
-# 5. Decrypt working files (Git storage stays encrypted)
-git reset --hard HEAD
+#    └─ When prompted, choose to decrypt so your working directory contains plaintext.
 ```
 
 **Done.** Your files are now readable locally and remain encrypted in Git.
@@ -411,20 +409,11 @@ All algorithms are competition winners or IETF/NIST standards.
 
 ### Security Limitations
 
-- ⚠️  **Shared key model** - All team members use the same master key file. Can't revoke individual access without re-keying the entire repository.
-
-### Performance
-
-Built in Elixir with **Rust NIFs** for the actual crypto.
-
-**On a laptop:**
-- Encrypt 1,000 files: ~5 seconds
-- Decrypt 1,000 files: ~5 seconds
-- Throughput: ~100-200 MB/s per file
-
-Yes, even with six layers. Turns out when you're neurotic about security, you're also neurotic about performance.
-
-You won't notice it happening. Which is exactly the point.
+* ⚠️ **Shared key model** — All team members use the same master key. Revoking access requires re-encrypting the entire repository. No per-user audit or access control.
+* ⚠️ **Deterministic encryption** — For Git compatibility, identical plaintexts produce identical ciphertexts. This leaks equality patterns and reveals when files remain unchanged or revert to earlier versions.
+* ⚠️ **Unencrypted working directory** — Files are stored in plaintext locally. Protect your machine with full-disk encryption and strong access controls.
+* ⚠️ **No formal audit** — While all algorithms are standards or competition winners, the combined system and multi-layer design have not yet undergone independent cryptographic review.
+* ⚠️ **Key loss** — Losing your master key makes encrypted data in Git permanently unrecoverable. Back up your key securely in a password manager or encrypted storage.
 
 ---
 
