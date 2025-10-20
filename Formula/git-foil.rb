@@ -1,8 +1,8 @@
 class GitFoil < Formula
   desc "Quantum-resistant Git encryption CLI"
   homepage "https://github.com/code-of-kai/git-foil"
-  url "https://github.com/code-of-kai/git-foil/archive/refs/tags/v1.0.1.tar.gz"
-  sha256 "2f4c49b6342e92b996ac5e4ef1f931e21e17b0f8dcf07373b305e758d595072e"
+  url "https://github.com/code-of-kai/git-foil/archive/refs/tags/v1.0.2.tar.gz"
+  sha256 "9adba32031e8888c320f88b970f958abf252d6cbe857733e308f71fa1f44fe6b"
   license "MIT"
 
   depends_on "elixir"
@@ -16,6 +16,7 @@ class GitFoil < Formula
     system "mix", "local.rebar", "--force"
     system "mix", "deps.get"
     system "mix", "compile"
+    system "mix", "compile", "lib/git_foil/native/rustler_loader.ex"
 
     libexec.install "priv"
 
@@ -25,6 +26,7 @@ class GitFoil < Formula
     (bin/"git-foil").write <<~EOS
       #!/bin/bash
       set -euo pipefail
+      export GIT_FOIL_NIF_DIR="#{libexec}/priv/native"
       cd "#{libexec}"
       exec "#{libexec}/git-foil" "$@"
     EOS
