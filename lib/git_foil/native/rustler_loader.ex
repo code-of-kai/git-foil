@@ -12,44 +12,44 @@ defmodule GitFoil.Native.RustlerLoader do
   ]
 
   @app_candidates [
-    "../../../_build/dev/lib/git_foil/ebin/git_foil.app",
-    "../../../_build/test/lib/git_foil/ebin/git_foil.app",
-    "../../../_build/prod/lib/git_foil/ebin/git_foil.app",
-    "../../../deps/git_foil/ebin/git_foil.app"
-  ]
-  |> Enum.map(&Path.expand(&1, __DIR__))
+                    "../../../_build/dev/lib/git_foil/ebin/git_foil.app",
+                    "../../../_build/test/lib/git_foil/ebin/git_foil.app",
+                    "../../../_build/prod/lib/git_foil/ebin/git_foil.app",
+                    "../../../deps/git_foil/ebin/git_foil.app"
+                  ]
+                  |> Enum.map(&Path.expand(&1, __DIR__))
 
   @embedded_app Enum.find_value(@app_candidates, fn path ->
-                   case File.read(path) do
-                     {:ok, bin} -> bin
-                     _ -> nil
-                   end
-                 end)
+                  case File.read(path) do
+                    {:ok, bin} -> bin
+                    _ -> nil
+                  end
+                end)
 
   @embedded_libraries Enum.reduce(@nif_libraries, %{}, fn %{base: base}, acc ->
-                         candidates =
-                           for env <- ["dev", "test", "prod"] do
-                             Path.expand(
-                               "../../../_build/#{env}/lib/git_foil/priv/native/#{base}.so",
-                               __DIR__
-                             )
-                           end ++
-                             [Path.expand("../../../priv/native/#{base}.so", __DIR__)]
+                        candidates =
+                          for env <- ["dev", "test", "prod"] do
+                            Path.expand(
+                              "../../../_build/#{env}/lib/git_foil/priv/native/#{base}.so",
+                              __DIR__
+                            )
+                          end ++
+                            [Path.expand("../../../priv/native/#{base}.so", __DIR__)]
 
-                         binary =
-                           Enum.find_value(candidates, fn path ->
-                             case File.read(path) do
-                               {:ok, bin} -> bin
-                               _ -> nil
-                             end
-                           end)
+                        binary =
+                          Enum.find_value(candidates, fn path ->
+                            case File.read(path) do
+                              {:ok, bin} -> bin
+                              _ -> nil
+                            end
+                          end)
 
-                         if binary do
-                           Map.put(acc, base, binary)
-                         else
-                           acc
-                         end
-                       end)
+                        if binary do
+                          Map.put(acc, base, binary)
+                        else
+                          acc
+                        end
+                      end)
 
   @doc """
   Ensures Rustler NIF libraries are available when running from escripts/releases.
@@ -157,13 +157,20 @@ defmodule GitFoil.Native.RustlerLoader do
   end
 
   defp find_library_on_disk(base) do
+    env_candidates =
+      case System.get_env("GIT_FOIL_NIF_DIR") do
+        nil -> []
+        dir -> [Path.join(dir, "#{base}.so")]
+      end
+
     candidates =
-      for env <- ["dev", "test", "prod"] do
-        Path.expand(
-          "../../../_build/#{env}/lib/git_foil/priv/native/#{base}.so",
-          __DIR__
-        )
-      end ++
+      env_candidates ++
+        for env <- ["dev", "test", "prod"] do
+          Path.expand(
+            "../../../_build/#{env}/lib/git_foil/priv/native/#{base}.so",
+            __DIR__
+          )
+        end ++
         [
           Path.expand("../../../priv/native/#{base}.so", __DIR__)
         ]
