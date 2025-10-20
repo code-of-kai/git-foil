@@ -207,7 +207,6 @@ During initialization, you'll be asked whether to encrypt the master key with a 
 3. Stored keypair in `.git/git_foil/master.key` (or `.git/git_foil/master.key.enc` if password-protected)
 4. Set up Git clean/smudge filters
 5. Updated `.gitattributes` with your chosen patterns
-
 **You're done.** Files now encrypt automatically when you commit.
 
 ---
@@ -371,21 +370,23 @@ You're never locked in. Don't like GitFoil anymore? Run `unencrypt` and it's gon
 
 ## Technical Specs
 
-### The Stack
+### The Algorithms
 
-| Layer | Algorithm | Key | Type | Pedigree |
-|-------|-----------|-----|------|----------|
-| 1 | AES-256-GCM | 256-bit | Block cipher | NIST standard since 2001 |
-| 2 | AEGIS-256 | 256-bit | AES-based AEAD | CAESAR winner |
-| 3 | Schwaemm256-256 | 256-bit | Sponge | NIST finalist |
-| 4 | Deoxys-II-256 | 256-bit | Tweakable block | CAESAR winner |
-| 5 | Ascon-128a | 128-bit | Sponge | **NIST winner (2023)** |
-| 6 | ChaCha20-Poly1305 | 256-bit | Stream cipher | IETF standard |
+- AES-256-GCM: NIST FIPS 197 (2001)
+- AEGIS-256: Wu & Preneel, CAESAR winner
+- Schwaemm256-256: NIST LWC finalist (2019)
+- Deoxys-II-256: CAESAR winner
+- Ascon-128a: NIST LWC winner (2023)
+- ChaCha20-Poly1305: Bernstein, IETF RFC 8439
+
 
 **Total combined key space:** 1,408 bits
 **Post-quantum security:** 704 bits (after Grover's algorithm)
 
-All algorithms are competition winners or IETF/NIST standards.
+All algorithms are competition winners or international standards. 
+We didn't just pick random papers. We just picked more of them than strictly necessary.
+
+
 
 ### Key Derivation
 
@@ -520,41 +521,6 @@ If we ever decide we need a seventh layer, the architecture will support it.
 
 ---
 
-## Stats
-
-- ~6,800 lines of Elixir
-- 5 Rust NIFs for crypto
-- 18 integration tests
-- Real Git operations in tests
-- One-command Homebrew installation
-- Compiles natively for optimal performance
-- 6-layer encryption that exists because of questionable decision-making
-
----
-
-## Credits
-
-Built on the shoulders of giants:
-
-- **Elixir** - Because Elixir is nice
-- **Rust** - Because memory safety is nice
-- **Homebrew** - Because simple installation is nice
-- **NIST/CAESAR competitions** - Because vetted crypto is nice
-- **Kyber1024** - Post-quantum key encapsulation
-- **Coffee** - Because building this was ridiculous
-
-### Algorithm Credits
-
-- AES-256-GCM: NIST FIPS 197 (2001)
-- AEGIS-256: Wu & Preneel, CAESAR winner
-- Schwaemm256-256: NIST LWC finalist (2019)
-- Deoxys-II-256: CAESAR winner
-- Ascon-128a: NIST LWC winner (2023)
-- ChaCha20-Poly1305: Bernstein, IETF RFC 8439
-
-All algorithms are competition winners or international standards. We didn't just pick random papers. We just picked more of them than strictly necessary.
-
----
 
 ## License
 
