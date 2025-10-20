@@ -15,6 +15,11 @@ erl_crash.dump
 # Dialyzer
 /priv/plts/
 
+# Compiled native libraries (should be compiled locally via Rustler)
+/priv/native/*.so
+/priv/native/*.dylib
+/priv/native/*.dll
+
 # Editor files
 .DS_Store
 *.swp
@@ -31,6 +36,7 @@ erl_crash.dump
 # Temporary files
 tmp/
 temp/
+test_tmp/
 git-veil
 burrito_out/
 
