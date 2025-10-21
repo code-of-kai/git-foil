@@ -11,7 +11,7 @@ defmodule GitFoil.Commands.Rekey do
 
   alias GitFoil.Adapters.{FileKeyStorage, PasswordProtectedKeyStorage}
   alias GitFoil.CLI.PasswordPrompt
-  alias GitFoil.Core.KeyManager
+  alias GitFoil.Core.{KeyManager, KeyMigration}
   alias GitFoil.Helpers.{FileEncryption, UIPrompts}
   alias GitFoil.Infrastructure.Terminal
 
@@ -325,15 +325,18 @@ defmodule GitFoil.Commands.Rekey do
   end
 
   defp current_key_paths do
-    cond do
-      File.exists?(".git/git_foil/master.key.enc") ->
-        {".git/git_foil/master.key.enc", "master.key.enc"}
+    encrypted = KeyMigration.encrypted_path()
+    plaintext = KeyMigration.plaintext_path()
 
-      File.exists?(".git/git_foil/master.key") ->
-        {".git/git_foil/master.key", "master.key"}
+    cond do
+      File.exists?(encrypted) ->
+        {encrypted, Path.basename(encrypted)}
+
+      File.exists?(plaintext) ->
+        {plaintext, Path.basename(plaintext)}
 
       true ->
-        {".git/git_foil/master.key", "master.key"}
+        {plaintext, Path.basename(plaintext)}
     end
   end
 end

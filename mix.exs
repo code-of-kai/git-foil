@@ -94,6 +94,9 @@ defmodule GitFoil.MixProject do
       # Property-based testing
       {:stream_data, "~> 1.1", only: :test},
 
+      # Local fork to silence deprecated charlist warnings
+      {:toml, path: "vendor/toml", override: true},
+
       # Tidewave MCP server for development
       {:tidewave, github: "tidewave-ai/tidewave_phoenix", only: :dev, runtime: false},
       {:bandit, "~> 1.5", only: :dev, runtime: false}

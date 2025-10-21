@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 mod sparkle;
 mod schwaemm;
 mod schwaemm_v2;

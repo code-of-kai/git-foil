@@ -29,7 +29,16 @@ defmodule GitFoil.CLI do
   ```
   """
 
-  alias GitFoil.Commands.{Commit, Encrypt, Init, Pattern, Rekey, Unencrypt}
+  alias GitFoil.Commands.{
+    Commit,
+    Encrypt,
+    EncryptKey,
+    Init,
+    Pattern,
+    Rekey,
+    Unencrypt,
+    UnencryptKey
+  }
 
   @version Mix.Project.config()[:version] || "dev"
 
@@ -91,7 +100,11 @@ defmodule GitFoil.CLI do
 
   defp parse_args(["commit" | rest]), do: {:commit, parse_commit_options(rest)}
 
+  defp parse_args(["encrypt", "key" | rest]), do: {:encrypt_key, parse_options(rest)}
+
   defp parse_args(["encrypt" | rest]), do: {:encrypt, parse_options(rest)}
+
+  defp parse_args(["unencrypt", "key" | rest]), do: {:unencrypt_key, parse_options(rest)}
 
   defp parse_args(["unencrypt" | rest]), do: {:unencrypt, parse_options(rest)}
 
@@ -195,8 +208,16 @@ defmodule GitFoil.CLI do
     Encrypt.run(opts)
   end
 
+  defp execute({:encrypt_key, opts}) do
+    EncryptKey.run(opts)
+  end
+
   defp execute({:unencrypt, opts}) do
     Unencrypt.run(opts)
+  end
+
+  defp execute({:unencrypt_key, opts}) do
+    UnencryptKey.run(opts)
   end
 
   defp execute({:rekey, opts}) do
@@ -247,7 +268,9 @@ defmodule GitFoil.CLI do
         remove-pattern <pattern>    Remove encryption pattern from .gitattributes
         list-patterns               List all configured encryption patterns
         encrypt                     Encrypt all files matching patterns
+        encrypt key                 Protect master key with a password
         unencrypt                   Remove all GitFoil encryption (decrypt all files)
+        unencrypt key               Store master key without password
         rekey                       Rekey repository (generate new keys or refresh with existing)
         commit                      Commit .gitattributes changes
         version                     Show version information

@@ -209,6 +209,20 @@ During initialization, you'll be asked whether to encrypt the master key with a 
 5. Updated `.gitattributes` with your chosen patterns
 **You're done.** Files now encrypt automatically when you commit.
 
+### Switching Password Protection Later
+
+Already initialized? Toggle password protection any time:
+
+```bash
+# Encrypt the existing master key with a password (prompts for a new password)
+git-foil encrypt key
+
+# Remove password protection (prompts for the current password)
+git-foil unencrypt key
+```
+
+Each command creates a timestamped backup of the previous key file—copy it into your password manager or delete it once you've stored it safely.
+
 ---
 
 ## Team Usage

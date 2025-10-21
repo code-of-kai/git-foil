@@ -11,7 +11,7 @@ defmodule GitFoil.Commands.Init do
   """
 
   alias GitFoil.Adapters.{FileKeyStorage, PasswordProtectedKeyStorage}
-  alias GitFoil.Core.KeyManager
+  alias GitFoil.Core.{KeyManager, KeyMigration}
   alias GitFoil.CLI.PasswordPrompt
   alias GitFoil.Helpers.{FileEncryption, UIPrompts}
   alias GitFoil.Infrastructure.{Git, Terminal}
@@ -50,6 +50,7 @@ defmodule GitFoil.Commands.Init do
          {:ok, key_action} <- check_existing_initialization(force, opts),
          {:ok, opts} <- ensure_password_choice(key_action, opts),
          :ok <- confirm_initialization(key_action, force, opts),
+         {:ok, opts} <- maybe_update_existing_key_storage(key_action, opts),
          :ok <- generate_keypair_and_configure_filters(key_action, opts),
          {:ok, pattern_status} <- maybe_configure_patterns(skip_patterns, opts),
          {:ok, encrypted} <- maybe_process_existing_files(key_action, pattern_status, opts) do
@@ -386,15 +387,160 @@ Run continues so the working tree can be decrypted and made readable.
   end
 
   defp ensure_password_choice(:use_existing, opts) do
-    use_password =
+    with {:ok, current_state, desired_state} <- current_and_desired_storage(opts) do
       cond do
-        PasswordProtectedKeyStorage.initialized?() -> true
-        FileKeyStorage.initialized?() -> false
-        true -> Keyword.get(opts, :password, false)
-      end
+        desired_state == current_state ->
+          {:ok,
+           opts
+           |> Keyword.delete(:password_migration)
+           |> Keyword.put(:use_password, current_state)}
 
-    {:ok, Keyword.put(opts, :use_password, use_password)}
+        desired_state ->
+          prepare_password_migration(:encrypt, opts)
+
+        true ->
+          prepare_password_migration(:unencrypt, opts)
+      end
+    end
   end
+
+  defp current_and_desired_storage(opts) do
+    case KeyManager.initialization_status() do
+      {:initialized, :plaintext} ->
+        {:ok, false, desired_state(false, opts)}
+
+      {:initialized, :password_protected} ->
+        {:ok, true, desired_state(true, opts)}
+
+      :not_initialized ->
+        {:error, "GitFoil not initialized. Run 'git-foil init' first."}
+    end
+  end
+
+  defp desired_state(current_state, opts) do
+    case Keyword.fetch(opts, :password) do
+      {:ok, value} -> value
+      :error -> current_state
+    end
+  end
+
+  defp prepare_password_migration(:encrypt, opts) do
+    IO.puts("")
+    IO.puts("🔐  Encrypting existing master key with a password.")
+
+    case PasswordPrompt.get_password("Password for master key: ", confirm: true) do
+      {:ok, password} ->
+        {:ok,
+         opts
+         |> Keyword.put(:use_password, true)
+         |> Keyword.put(:password_migration, {:encrypt, password})}
+
+      {:error, :password_mismatch} ->
+        {:error, "Passwords do not match. Please run the command again."}
+
+      {:error, reason} ->
+        {:error, "Password prompt failed: #{PasswordPrompt.format_error(reason)}"}
+    end
+  end
+
+  defp prepare_password_migration(:unencrypt, opts) do
+    IO.puts("")
+    IO.puts("🔓  Removing password protection from existing master key.")
+
+    case PasswordPrompt.get_password_with_fallback("Current master key password: ") do
+      {:ok, password} ->
+        {:ok,
+         opts
+         |> Keyword.put(:use_password, false)
+         |> Keyword.put(:password_migration, {:unencrypt, password})}
+
+      {:error, reason} ->
+        {:error, "Password prompt failed: #{PasswordPrompt.format_error(reason)}"}
+    end
+  end
+
+  defp maybe_update_existing_key_storage(:use_existing, opts) do
+    case Keyword.get(opts, :password_migration) do
+      nil ->
+        {:ok, cleanup_password_opts(opts)}
+
+      {:encrypt, password} ->
+        case KeyMigration.encrypt_plaintext_key(password) do
+          {:ok, %{backup_path: backup_path}} ->
+            print_migration_success(:encrypt, backup_path)
+            {:ok, cleanup_password_opts(opts, [:password_value])}
+
+          {:error, :already_encrypted} ->
+            {:ok, cleanup_password_opts(opts)}
+
+          {:error, reason} ->
+            {:error, format_storage_change_error(reason)}
+        end
+
+      {:unencrypt, password} ->
+        case KeyMigration.unencrypt_key(password) do
+          {:ok, %{backup_path: backup_path}} ->
+            print_migration_success(:unencrypt, backup_path)
+            {:ok, cleanup_password_opts(opts, [:password_value])}
+
+          {:error, :already_plaintext} ->
+            {:ok, cleanup_password_opts(opts)}
+
+          {:error, :invalid_password} ->
+            {:error, "Invalid password. Master key remains encrypted."}
+
+          {:error, reason} ->
+            {:error, format_storage_change_error(reason)}
+        end
+    end
+  end
+
+  defp maybe_update_existing_key_storage(_key_action, opts) do
+    {:ok, cleanup_password_opts(opts)}
+  end
+
+  defp cleanup_password_opts(opts, extra_keys \\ []) do
+    ([:password_migration] ++ extra_keys)
+    |> Enum.reduce(opts, fn key, acc -> Keyword.delete(acc, key) end)
+  end
+
+  defp print_migration_success(:encrypt, backup_path) do
+    IO.puts("")
+    IO.puts("✅  Master key is now password protected.")
+    IO.puts("   Encrypted key: #{KeyMigration.encrypted_path()}")
+    IO.puts("   Plaintext backup saved to: #{backup_path}")
+    IO.puts("")
+  end
+
+  defp print_migration_success(:unencrypt, backup_path) do
+    IO.puts("")
+    IO.puts("✅  Master key stored without password.")
+    IO.puts("   Plaintext key: #{KeyMigration.plaintext_path()}")
+    IO.puts("   Encrypted backup saved to: #{backup_path}")
+    IO.puts("")
+  end
+
+  defp format_storage_change_error({:backup_failed, reason}) do
+    "Failed to create key backup: #{UIPrompts.format_error(reason)}"
+  end
+
+  defp format_storage_change_error({:remove_failed, reason}) do
+    """
+    Key migration completed, but failed to remove old key: #{UIPrompts.format_error(reason)}
+    """
+    |> String.trim()
+  end
+
+  defp format_storage_change_error(:no_plaintext_key) do
+    "Plaintext master key not found at #{KeyMigration.plaintext_path()}."
+  end
+
+  defp format_storage_change_error(:no_encrypted_key) do
+    "Encrypted master key not found at #{KeyMigration.encrypted_path()}."
+  end
+
+  defp format_storage_change_error(other) when is_binary(other), do: other
+  defp format_storage_change_error(other), do: UIPrompts.format_error(other)
 
   defp notify_password_selection(true, source) do
     message =

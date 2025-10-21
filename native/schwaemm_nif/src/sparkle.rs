@@ -49,7 +49,7 @@ fn alzette(x: u32, y: u32, c: u32) -> (u32, u32) {
 /// ELL function: rotate by 16 and XOR with left-shifted version
 #[inline(always)]
 fn ell(x: u32) -> u32 {
-    ((x ^ (x << 16)).rotate_right(16))
+    (x ^ (x << 16)).rotate_right(16)
 }
 
 /// Linear layer for Sparkle permutation (generic over state size)
