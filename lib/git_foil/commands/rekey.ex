@@ -115,7 +115,9 @@ defmodule GitFoil.Commands.Rekey do
     end
   end
 
+  # Grouped clauses for maybe_generate_new_key/2
   defp maybe_generate_new_key({:use_existing}, _opts), do: :ok
+  defp maybe_generate_new_key({:error, reason}, _opts), do: {:error, reason}
 
   defp maybe_generate_new_key({:generate_new}, opts) do
     terminal = Keyword.get(opts, :terminal, Terminal)
@@ -144,12 +146,7 @@ defmodule GitFoil.Commands.Rekey do
     if choice do
       # Friendly requirements before prompting
       IO.puts("")
-      IO.puts("Password requirements:")
-      IO.puts("  • Minimum 8 characters")
-      IO.puts("  • Input is visible in this terminal (no hidden input)")
-      IO.puts("  • Press Ctrl-C to cancel")
-      IO.puts("")
-
+      UIPrompts.print_password_requirements()
       prompt_password_and_init_key()
     else
       case KeyManager.init_without_password() do
@@ -188,7 +185,7 @@ defmodule GitFoil.Commands.Rekey do
     end
   end
 
-  defp maybe_generate_new_key({:error, reason}, _opts), do: {:error, reason}
+  # end grouped clauses
 
   defp notify_password_selection(true, source) do
     message =

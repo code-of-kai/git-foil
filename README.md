@@ -238,6 +238,26 @@ GitFoil supports two environment variables to make interactive flows determinist
 
 Interactive flows print a short banner with password requirements (min 8 chars, visible input, Ctrl-C to cancel) and will re-prompt on invalid input.
 
+#### Automation examples
+
+Use an environment variable (non-interactive):
+
+```bash
+export GIT_FOIL_PASSWORD='VeryStrongPass9'
+git-foil encrypt key
+unset GIT_FOIL_PASSWORD
+```
+
+Feed prompts from a file (fake TTY):
+
+```bash
+printf "VeryStrongPass9\nVeryStrongPass9\n" > /tmp/tty_password
+export GIT_FOIL_TTY=/tmp/tty_password
+git-foil encrypt key
+unset GIT_FOIL_TTY
+rm -f /tmp/tty_password
+```
+
 
 ---
 

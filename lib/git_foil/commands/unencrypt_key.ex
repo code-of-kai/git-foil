@@ -34,7 +34,7 @@ defmodule GitFoil.Commands.UnencryptKey do
     case System.get_env("GIT_FOIL_PASSWORD") do
       # Interactive path: show requirements and reprompt until valid
       nil ->
-        print_password_requirements()
+        UIPrompts.print_password_requirements()
         with {:ok, password} <- prompt_password_loop() do
           do_unencrypt_with(password)
         end
@@ -77,13 +77,7 @@ defmodule GitFoil.Commands.UnencryptKey do
     end
   end
 
-  defp print_password_requirements do
-    IO.puts("Password requirements:")
-    IO.puts("  • Minimum 8 characters")
-    IO.puts("  • Input is visible in this terminal (no hidden input)")
-    IO.puts("  • Press Ctrl-C to cancel")
-    IO.puts("")
-  end
+  # requirements banner now printed via UIPrompts.print_password_requirements/0
 
   defp prompt_password_loop do
     case PasswordPrompt.get_password("Current master key password (min 8 chars): ", confirm: false) do

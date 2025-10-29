@@ -319,6 +319,22 @@ defmodule GitFoil.CLI do
         git-foil init --force
 
     For more information, visit: https://github.com/code-of-kai/git-foil
-    """
+  
+  Commands
+  - init                Initialize in current repo
+  - encrypt key         Encrypt master key with a password
+  - unencrypt key       Remove password protection from master key
+  - rekey               Rotate keys or re-apply encryption
+  - configure           Interactive pattern setup
+  - add-pattern <glob>  Add encryption pattern
+  - list-patterns       List configured patterns
+  - commit              Commit staged changes with guidance
+
+  Environment Variables
+  - GIT_FOIL_PASSWORD   Supply a password non-interactively (min 8 chars)
+  - GIT_FOIL_TTY        Path used as TTY for prompts (testing/automation)
+
+  For more, see README.md (Setup, Non-interactive prompts).
+  """
   end
 end

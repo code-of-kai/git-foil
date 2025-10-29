@@ -55,6 +55,17 @@ defmodule GitFoil.Helpers.UIPrompts do
   def format_error(reason), do: "Unexpected error: #{inspect(reason)}"
 
   @doc """
+  Prints the standard password requirements banner used by interactive flows.
+  """
+  def print_password_requirements do
+    IO.puts("Password requirements:")
+    IO.puts("  • Minimum 8 characters")
+    IO.puts("  • Input is visible in this terminal (no hidden input)")
+    IO.puts("  • Press Ctrl-C to cancel")
+    IO.puts("")
+  end
+
+  @doc """
   Prompts user to choose between using existing encryption key or creating a new one.
 
   Returns:

@@ -13,7 +13,7 @@ defmodule GitFoil.Commands.EncryptKey do
   @doc """
   Execute the command.
   """
-  def run(_opts \\ []) do
+  def run(opts \\ []) do
     IO.puts("🔐  Encrypting master key...")
     IO.puts("")
 
@@ -21,7 +21,14 @@ defmodule GitFoil.Commands.EncryptKey do
          {:ok, status} <- ensure_initialized() do
       case status do
         :plaintext ->
-          encrypt_plaintext_key()
+          case Keyword.get(opts, :password, :unspecified) do
+            false ->
+              {:error,
+               "Cannot encrypt key without a password. Use 'git-foil unencrypt key' to remove password instead."}
+
+            _ ->
+              encrypt_plaintext_key()
+          end
 
         :password_protected ->
           {:ok, already_encrypted_message()}
@@ -35,7 +42,7 @@ defmodule GitFoil.Commands.EncryptKey do
     case System.get_env("GIT_FOIL_PASSWORD") do
       # Interactive path: show requirements and reprompt until valid
       nil ->
-        print_password_requirements()
+        UIPrompts.print_password_requirements()
         with {:ok, password} <- prompt_password_loop() do
           do_encrypt_with(password)
         end
@@ -78,13 +85,7 @@ defmodule GitFoil.Commands.EncryptKey do
     end
   end
 
-  defp print_password_requirements do
-    IO.puts("Password requirements:")
-    IO.puts("  • Minimum 8 characters")
-    IO.puts("  • Input is visible in this terminal (no hidden input)")
-    IO.puts("  • Press Ctrl-C to cancel")
-    IO.puts("")
-  end
+  # requirements banner now printed via UIPrompts.print_password_requirements/0
 
   # Interactive loop for password entry with confirmation and clear errors
   defp prompt_password_loop do
