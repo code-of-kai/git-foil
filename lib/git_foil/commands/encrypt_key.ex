@@ -32,21 +32,78 @@ defmodule GitFoil.Commands.EncryptKey do
   end
 
   defp encrypt_plaintext_key do
-    case PasswordPrompt.get_password_with_fallback("New password for master key: ", confirm: true) do
-      {:ok, password} ->
-        case KeyMigration.encrypt_plaintext_key(password) do
-          {:ok, %{backup_path: backup_path}} ->
-            {:ok, success_message(backup_path)}
-
-          {:error, :already_encrypted} ->
-            {:ok, already_encrypted_message()}
-
-          {:error, other} ->
-            {:error, format_migration_error(other)}
+    case System.get_env("GIT_FOIL_PASSWORD") do
+      # Interactive path: show requirements and reprompt until valid
+      nil ->
+        print_password_requirements()
+        with {:ok, password} <- prompt_password_loop() do
+          do_encrypt_with(password)
         end
 
-      {:error, reason} ->
-        {:error, "Password prompt failed: #{PasswordPrompt.format_error(reason)}"}
+      # Non-interactive path: respect env var and validate once
+      _env_val ->
+        case PasswordPrompt.get_password_with_fallback(
+               "New password for master key: ",
+               confirm: true
+             ) do
+          {:ok, password} -> do_encrypt_with(password)
+
+          {:error, {:password_too_short, min}} ->
+            {:error,
+             "Password must be at least #{min} characters. Set GIT_FOIL_PASSWORD to a longer value, or unset it to be prompted interactively."}
+
+          {:error, :password_empty} ->
+            {:error,
+             "Password cannot be empty. Set GIT_FOIL_PASSWORD to a non-empty value, or unset it to be prompted interactively."}
+
+          {:error, :password_mismatch} ->
+            {:error, "Passwords do not match. Re-run with a valid value or unset GIT_FOIL_PASSWORD."}
+
+          {:error, reason} ->
+            {:error, "Password prompt failed: #{PasswordPrompt.format_error(reason)}"}
+        end
+    end
+  end
+
+  defp do_encrypt_with(password) do
+    case KeyMigration.encrypt_plaintext_key(password) do
+      {:ok, %{backup_path: backup_path}} ->
+        {:ok, success_message(backup_path)}
+
+      {:error, :already_encrypted} ->
+        {:ok, already_encrypted_message()}
+
+      {:error, other} ->
+        {:error, format_migration_error(other)}
+    end
+  end
+
+  defp print_password_requirements do
+    IO.puts("Password requirements:")
+    IO.puts("  • Minimum 8 characters")
+    IO.puts("  • Input is visible in this terminal (no hidden input)")
+    IO.puts("  • Press Ctrl-C to cancel")
+    IO.puts("")
+  end
+
+  # Interactive loop for password entry with confirmation and clear errors
+  defp prompt_password_loop do
+    case PasswordPrompt.get_password(
+           "New password for master key (min 8 chars): ",
+           confirm: true
+         ) do
+      {:ok, password} -> {:ok, password}
+      {:error, :password_mismatch} ->
+        IO.puts("\nError: Passwords do not match. Please try again.\n")
+        prompt_password_loop()
+      {:error, {:password_too_short, min}} ->
+        IO.puts("\nError: Password must be at least #{min} characters. Please try again.\n")
+        prompt_password_loop()
+      {:error, :password_empty} ->
+        IO.puts("\nError: Password cannot be empty. Please try again.\n")
+        prompt_password_loop()
+      {:error, other} ->
+        {:error, "Password prompt failed: #{PasswordPrompt.format_error(other)}"}
     end
   end
 
