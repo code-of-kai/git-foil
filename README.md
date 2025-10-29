@@ -223,6 +223,22 @@ git-foil unencrypt key
 
 Each command creates a timestamped backup of the previous key file—copy it into your password manager or delete it once you've stored it safely.
 
+### Non-interactive prompts (CI/local automation)
+
+GitFoil supports two environment variables to make interactive flows deterministic:
+
+- `GIT_FOIL_PASSWORD`: Supplies a password for key operations without prompting.
+  - Used by `git-foil encrypt key`, `git-foil unencrypt key`, and some init/rekey flows.
+  - Must be at least 8 characters and non-empty. If invalid, commands return a clear error.
+  - Unset this var to be prompted interactively.
+
+- `GIT_FOIL_TTY`: Path to a file that acts like a TTY for input.
+  - When set, password prompts read from this file (useful for tests and scripts).
+  - Example: write two lines for password and confirmation, then run the command.
+
+Interactive flows print a short banner with password requirements (min 8 chars, visible input, Ctrl-C to cancel) and will re-prompt on invalid input.
+
+
 ---
 
 ## Team Usage
