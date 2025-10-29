@@ -142,22 +142,15 @@ defmodule GitFoil.Commands.Rekey do
       end
 
     if choice do
-      case PasswordPrompt.get_password("Enter password for new key: ", confirm: true) do
-        {:ok, password} ->
-          case KeyManager.init_with_password(password) do
-            {:ok, _keypair} ->
-              :ok
+      # Friendly requirements before prompting
+      IO.puts("")
+      IO.puts("Password requirements:")
+      IO.puts("  • Minimum 8 characters")
+      IO.puts("  • Input is visible in this terminal (no hidden input)")
+      IO.puts("  • Press Ctrl-C to cancel")
+      IO.puts("")
 
-            {:error, reason} ->
-              {:error, "Failed to generate keypair: #{UIPrompts.format_error(reason)}"}
-          end
-
-        {:error, :password_mismatch} ->
-          {:error, "Passwords do not match. Please try again."}
-
-        {:error, reason} ->
-          {:error, "Password prompt failed: #{PasswordPrompt.format_error(reason)}"}
-      end
+      prompt_password_and_init_key()
     else
       case KeyManager.init_without_password() do
         {:ok, _keypair} ->
@@ -166,6 +159,32 @@ defmodule GitFoil.Commands.Rekey do
         {:error, reason} ->
           {:error, "Failed to generate keypair: #{UIPrompts.format_error(reason)}"}
       end
+    end
+  end
+  
+  # Re-prompts until a valid password is provided or the user cancels (Ctrl-C)
+  defp prompt_password_and_init_key do
+    case PasswordPrompt.get_password("New password for master key (min 8 chars): ", confirm: true) do
+      {:ok, password} ->
+        case KeyManager.init_with_password(password) do
+          {:ok, _keypair} -> :ok
+          {:error, reason} -> {:error, "Failed to generate keypair: #{UIPrompts.format_error(reason)}"}
+        end
+
+      {:error, :password_mismatch} ->
+        IO.puts("\nError: Passwords do not match. Please try again.\n")
+        prompt_password_and_init_key()
+
+      {:error, {:password_too_short, min}} ->
+        IO.puts("\nError: Password must be at least #{min} characters. Please try again.\n")
+        prompt_password_and_init_key()
+
+      {:error, :password_empty} ->
+        IO.puts("\nError: Password cannot be empty. Please try again.\n")
+        prompt_password_and_init_key()
+
+      {:error, reason} ->
+        {:error, "Password prompt failed: #{PasswordPrompt.format_error(reason)}"}
     end
   end
 
