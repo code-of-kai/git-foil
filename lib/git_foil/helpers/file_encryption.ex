@@ -26,6 +26,7 @@ defmodule GitFoil.Helpers.FileEncryption do
   def add_files_with_progress(files, total, opts \\ []) do
     repository = Keyword.get(opts, :repository)
     terminal = Keyword.get(opts, :terminal, Terminal)
+    {password_env, cleanup_password_env} = build_password_env(opts)
 
     show_progress? = total > 0
 
@@ -33,36 +34,39 @@ defmodule GitFoil.Helpers.FileEncryption do
       IO.write("   ")
     end
 
-    files
-    |> Enum.with_index(1)
-    |> Enum.reduce_while(:ok, fn {file, index}, _acc ->
-      if show_progress? do
-        progress_bar = terminal.progress_bar(index, total)
-        IO.write("\r\e[K   #{progress_bar} #{index}/#{total} files")
-      end
-
-      # Add the file (triggers clean filter for encryption)
-      result = if repository do
-        # Use injected repository adapter (for testing)
-        repository.add_file(file)
-      else
-        # Direct git call
-        case System.cmd("git", ["add", file], stderr_to_stdout: true) do
-          {_, 0} -> :ok
-          {error, _} -> {:error, String.trim(error)}
+    result =
+      files
+      |> Enum.with_index(1)
+      |> Enum.reduce_while(:ok, fn {file, index}, _acc ->
+        if show_progress? do
+          progress_bar = terminal.progress_bar(index, total)
+          IO.write("\r\e[K   #{progress_bar} #{index}/#{total} files")
         end
-      end
 
-      case result do
-        :ok ->
-          {:cont, :ok}
+        # Add the file (triggers clean filter for encryption)
+        result =
+          if repository do
+            repository.add_file(file)
+          else
+            case System.cmd("git", ["add", file], env: password_env, stderr_to_stdout: true) do
+              {_, 0} -> :ok
+              {error, _} -> {:error, String.trim(error)}
+            end
+          end
 
-        {:error, reason} ->
-          IO.write("\n")
-          {:halt, {:error, "Failed to encrypt #{file}: #{reason}"}}
-      end
-    end)
-    |> case do
+        case result do
+          :ok ->
+            {:cont, :ok}
+
+          {:error, reason} ->
+            IO.write("\n")
+            {:halt, {:error, "Failed to encrypt #{file}: #{reason}"}}
+        end
+      end)
+
+    cleanup_password_env.()
+
+    case result do
       :ok ->
         if show_progress? do
           IO.write("\n")
@@ -79,5 +83,43 @@ defmodule GitFoil.Helpers.FileEncryption do
 
         error
     end
+  end
+
+  defp build_password_env(opts) do
+    case Keyword.get(opts, :password_value) do
+      password when is_binary(password) ->
+        path = Path.join(System.tmp_dir!(), "gitfoil-pass-" <> random_suffix())
+
+        File.write!(path, password <> "\n" <> password <> "\n")
+
+        case File.chmod(path, 0o600) do
+          :ok -> :ok
+          {:error, _} -> :ok
+        end
+
+        previous = System.get_env("GIT_FOIL_TTY")
+        System.put_env("GIT_FOIL_TTY", path)
+
+        env = [{"GIT_FOIL_TTY", path}]
+
+        cleanup = fn ->
+          case previous do
+            nil -> System.delete_env("GIT_FOIL_TTY")
+            value -> System.put_env("GIT_FOIL_TTY", value)
+          end
+
+          File.rm_rf(path)
+        end
+        {env, cleanup}
+
+      _ ->
+        {[], fn -> :ok end}
+    end
+  end
+
+  defp random_suffix do
+    12
+    |> :crypto.strong_rand_bytes()
+    |> Base.url_encode64(padding: false)
   end
 end
