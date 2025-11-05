@@ -1,0 +1,71 @@
+name: Update Homebrew Tap
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  TAP_REPO: code-of-kai/homebrew-gitfoil
+
+jobs:
+  update-tap:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Extract version from tag
+        id: meta
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          echo "release_tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
+
+      - name: Compute tarball SHA256
+        id: sha
+        run: |
+          URL="https://github.com/${{ github.repository }}/archive/refs/tags/${{ steps.meta.outputs.release_tag }}.tar.gz"
+          SHA=$(curl -Ls "$URL" | sha256sum | awk '{print $1}')
+          echo "tarball_url=$URL" >> $GITHUB_OUTPUT
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+
+      - name: Checkout tap repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.TAP_REPO }}
+          token: ${{ secrets.TAP_TOKEN }}
+          path: tap
+
+      - name: Update formula
+        run: |
+          cd tap/Formula
+          sed -i "s#^  url \".*\"#  url \"${{ steps.sha.outputs.tarball_url }}\"#" git-foil.rb
+          sed -i "s#^  sha256 \".*\"#  sha256 \"${{ steps.sha.outputs.sha }}\"#" git-foil.rb
+
+      - name: Commit and push branch
+        run: |
+          cd tap
+          BRANCH="bump-${{ steps.meta.outputs.release_tag }}"
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git checkout -b "$BRANCH"
+          git add Formula/git-foil.rb
+          git commit -m "git-foil ${ { steps.meta.outputs.release_tag }}: update url & sha256"
+          git push -u origin "$BRANCH"
+        env:
+          GIT_TERMINAL_PROMPT: 0
+        shell: bash
+
+      - name: Open pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.TAP_TOKEN }}
+          repository: ${{ env.TAP_REPO }}
+          base: main
+          branch: bump-${{ steps.meta.outputs.release_tag }}
+          title: "git-foil ${{ steps.meta.outputs.release_tag }}"
+          body: |
+            Automated update for git-foil ${{ steps.meta.outputs.release_tag }}.
+            - url: ${{ steps.sha.outputs.tarball_url }}
+            - sha256: ${{ steps.sha.outputs.sha }}
