@@ -161,4 +161,29 @@ defmodule GitFoil.CLI.PasswordPrompt do
 
   def format_error(:eof), do: "Unexpected end of input"
   def format_error(other), do: "Password input failed: #{inspect(other)}"
+
+  # ----------------------------------------------------------------------------
+  # Existing-password prompt (no length validation, no confirmation)
+  # ----------------------------------------------------------------------------
+
+  @doc """
+  Prompts for an existing password without enforcing length or confirmation.
+
+  - Respects `GIT_FOIL_PASSWORD` if present (used as-is)
+  - Otherwise reads a single line from TTY (or stdin fallback) and returns it trimmed
+
+  This is appropriate for verifying/decrypting an already-encrypted key, where
+  we should accept any byte sequence and let the decrypt step decide validity.
+  """
+  @spec get_existing_password(String.t()) :: {:ok, String.t()} | {:error, term()}
+  def get_existing_password(prompt) do
+    case System.get_env(@env_var) do
+      password when is_binary(password) -> {:ok, password}
+      _ ->
+        case read_from_tty(prompt) do
+          {:ok, line} -> {:ok, String.trim(line)}
+          {:error, reason} -> {:error, reason}
+        end
+    end
+  end
 end

@@ -31,33 +31,9 @@ defmodule GitFoil.Commands.UnencryptKey do
   end
 
   defp unencrypt_key do
-    case System.get_env("GIT_FOIL_PASSWORD") do
-      # Interactive path: show requirements and reprompt until valid
-      nil ->
-        UIPrompts.print_password_requirements()
-        with {:ok, password} <- prompt_password_loop() do
-          do_unencrypt_with(password)
-        end
-
-      # Non-interactive path: respect env var and validate once
-      _env_val ->
-        case PasswordPrompt.get_password_with_fallback(
-               "Current master key password: ",
-               confirm: false
-             ) do
-          {:ok, password} -> do_unencrypt_with(password)
-
-          {:error, {:password_too_short, min}} ->
-            {:error,
-             "Password must be at least #{min} characters. Set GIT_FOIL_PASSWORD to a longer value, or unset it to be prompted interactively."}
-
-          {:error, :password_empty} ->
-            {:error,
-             "Password cannot be empty. Set GIT_FOIL_PASSWORD to a non-empty value, or unset it to be prompted interactively."}
-
-          {:error, reason} ->
-            {:error, "Password prompt failed: #{PasswordPrompt.format_error(reason)}"}
-        end
+    case PasswordPrompt.get_existing_password("Current master key password: ") do
+      {:ok, password} -> do_unencrypt_with(password)
+      {:error, reason} -> {:error, "Password prompt failed: #{PasswordPrompt.format_error(reason)}"}
     end
   end
 
@@ -77,21 +53,7 @@ defmodule GitFoil.Commands.UnencryptKey do
     end
   end
 
-  # requirements banner now printed via UIPrompts.print_password_requirements/0
-
-  defp prompt_password_loop do
-    case PasswordPrompt.get_password("Current master key password (min 8 chars): ", confirm: false) do
-      {:ok, password} -> {:ok, password}
-      {:error, {:password_too_short, min}} ->
-        IO.puts("\nError: Password must be at least #{min} characters. Please try again.\n")
-        prompt_password_loop()
-      {:error, :password_empty} ->
-        IO.puts("\nError: Password cannot be empty. Please try again.\n")
-        prompt_password_loop()
-      {:error, other} ->
-        {:error, "Password prompt failed: #{PasswordPrompt.format_error(other)}"}
-    end
-  end
+  # No banner/loop for existing passwords; accept a single line and attempt decrypt.
 
   defp verify_git_repository do
     case System.cmd("git", ["rev-parse", "--git-dir"], stderr_to_stdout: true) do
