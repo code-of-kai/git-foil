@@ -43,29 +43,18 @@ jobs:
           sed -i "s#^  url \".*\"#  url \"${{ steps.sha.outputs.tarball_url }}\"#" git-foil.rb
           sed -i "s#^  sha256 \".*\"#  sha256 \"${{ steps.sha.outputs.sha }}\"#" git-foil.rb
 
-      - name: Commit and push branch
+      - name: Commit and push to tap main
         run: |
           cd tap
-          BRANCH="bump-${{ steps.meta.outputs.release_tag }}"
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git checkout -b "$BRANCH"
           git add Formula/git-foil.rb
-          git commit -m "git-foil ${ { steps.meta.outputs.release_tag }}: update url & sha256"
-          git push -u origin "$BRANCH"
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "git-foil ${{ steps.meta.outputs.release_tag }}: update url & sha256"
+          git push origin HEAD:main
         env:
           GIT_TERMINAL_PROMPT: 0
         shell: bash
-
-      - name: Open pull request
-        uses: peter-evans/create-pull-request@v6
-        with:
-          token: ${{ secrets.TAP_TOKEN }}
-          repository: ${{ env.TAP_REPO }}
-          base: main
-          branch: bump-${{ steps.meta.outputs.release_tag }}
-          title: "git-foil ${{ steps.meta.outputs.release_tag }}"
-          body: |
-            Automated update for git-foil ${{ steps.meta.outputs.release_tag }}.
-            - url: ${{ steps.sha.outputs.tarball_url }}
-            - sha256: ${{ steps.sha.outputs.sha }}
