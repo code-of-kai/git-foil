@@ -48,6 +48,7 @@ defmodule GitFoil.CLI do
   Parses arguments and dispatches to appropriate command.
   """
   def main(args) do
+    setup_signal_handlers()
     result = run(args)
     handle_result(result)
   end
@@ -76,67 +77,128 @@ defmodule GitFoil.CLI do
   defp parse_args(["--version" | _]), do: {:version, []}
   defp parse_args(["-v" | _]), do: {:version, []}
 
-  defp parse_args(["init" | rest]), do: {:init, parse_options(rest)}
+  defp parse_args(["init" | rest]), do: with_parsed_options(rest, &{:init, &1})
 
   defp parse_args(["clean", file_path | rest]) when is_binary(file_path) do
-    {:clean, [file_path: file_path] ++ parse_options(rest)}
-  end
-
-  defp parse_args(["smudge", file_path | rest]) when is_binary(file_path) do
-    {:smudge, [file_path: file_path] ++ parse_options(rest)}
-  end
-
-  defp parse_args(["configure" | rest]), do: {:configure, parse_options(rest)}
-
-  defp parse_args(["add-pattern", pattern | rest]) when is_binary(pattern) do
-    {:add_pattern, [pattern: pattern] ++ parse_options(rest)}
-  end
-
-  defp parse_args(["remove-pattern", pattern | rest]) when is_binary(pattern) do
-    {:remove_pattern, [pattern: pattern] ++ parse_options(rest)}
-  end
-
-  defp parse_args(["list-patterns" | rest]), do: {:list_patterns, parse_options(rest)}
-
-  defp parse_args(["commit" | rest]), do: {:commit, parse_commit_options(rest)}
-
-  defp parse_args(["encrypt", "key" | rest]), do: {:encrypt_key, parse_options(rest)}
-
-  defp parse_args(["encrypt" | rest]), do: {:encrypt, parse_options(rest)}
-
-  defp parse_args(["unencrypt", "key" | rest]), do: {:unencrypt_key, parse_options(rest)}
-
-  defp parse_args(["unencrypt" | rest]), do: {:unencrypt, parse_options(rest)}
-
-  defp parse_args(["rekey" | rest]), do: {:rekey, parse_options(rest)}
-
-  defp parse_args(args) do
-    {:error, "Unknown command: #{Enum.join(args, " ")}"}
-  end
-
-  defp parse_options(args) do
-    args
-    |> Enum.reduce([], fn
-      "--verbose", acc -> [{:verbose, true} | acc]
-      "-v", acc -> [{:verbose, true} | acc]
-      "--force", acc -> [{:force, true} | acc]
-      "-f", acc -> [{:force, true} | acc]
-      "--skip-gitattributes", acc -> [{:skip_gitattributes, true} | acc]
-      "--skip-patterns", acc -> [{:skip_patterns, true} | acc]
-      "--keep-key", acc -> [{:keep_key, true} | acc]
-      "--password", acc -> [{:password, true} | acc]
-      "--no-password", acc -> [{:password, false} | acc]
-      _, acc -> acc
+    with_parsed_options(rest, fn opts ->
+      {:clean, Keyword.put(opts, :file_path, file_path)}
     end)
   end
 
-  defp parse_commit_options(args) do
-    case args do
-      ["-m", message | rest] -> [{:message, message} | parse_options(rest)]
-      ["--message", message | rest] -> [{:message, message} | parse_options(rest)]
-      rest -> parse_options(rest)
+  defp parse_args(["smudge", file_path | rest]) when is_binary(file_path) do
+    with_parsed_options(rest, fn opts ->
+      {:smudge, Keyword.put(opts, :file_path, file_path)}
+    end)
+  end
+
+  defp parse_args(["configure" | rest]), do: with_parsed_options(rest, &{:configure, &1})
+
+  defp parse_args(["add-pattern", pattern | rest]) when is_binary(pattern) do
+    with_parsed_options(rest, fn opts ->
+      {:add_pattern, Keyword.put(opts, :pattern, pattern)}
+    end)
+  end
+
+  defp parse_args(["remove-pattern", pattern | rest]) when is_binary(pattern) do
+    with_parsed_options(rest, fn opts ->
+      {:remove_pattern, Keyword.put(opts, :pattern, pattern)}
+    end)
+  end
+
+  defp parse_args(["list-patterns" | rest]), do: with_parsed_options(rest, &{:list_patterns, &1})
+
+  defp parse_args(["commit" | rest]) do
+    case parse_commit_options(rest) do
+      {:ok, opts} -> {:commit, opts}
+      {:error, msg} -> {:error, msg}
     end
   end
+
+  defp parse_args(["encrypt", "key" | rest]), do: with_parsed_options(rest, &{:encrypt_key, &1})
+
+  defp parse_args(["encrypt" | rest]), do: with_parsed_options(rest, &{:encrypt, &1})
+
+  defp parse_args(["unencrypt", "key" | rest]), do: with_parsed_options(rest, &{:unencrypt_key, &1})
+
+  defp parse_args(["unencrypt" | rest]), do: with_parsed_options(rest, &{:unencrypt, &1})
+
+  defp parse_args(["rekey" | rest]), do: with_parsed_options(rest, &{:rekey, &1})
+
+  defp parse_args(args), do: {:error, "Unknown command: #{Enum.join(args, " ")}"}
+
+  defp with_parsed_options(args, fun) when is_function(fun, 1) do
+    case parse_options(args) do
+      {:ok, opts} -> fun.(opts)
+      {:error, msg} -> {:error, msg}
+    end
+  end
+
+  defp parse_options(args), do: do_parse_options(args, [])
+
+  defp do_parse_options([], acc), do: {:ok, Enum.reverse(acc)}
+
+  defp do_parse_options(["--verbose" | rest], acc), do: do_parse_options(rest, [{:verbose, true} | acc])
+  defp do_parse_options(["-v" | rest], acc), do: do_parse_options(rest, [{:verbose, true} | acc])
+  defp do_parse_options(["--force" | rest], acc), do: do_parse_options(rest, [{:force, true} | acc])
+  defp do_parse_options(["-f" | rest], acc), do: do_parse_options(rest, [{:force, true} | acc])
+  defp do_parse_options(["--skip-gitattributes" | rest], acc), do: do_parse_options(rest, [{:skip_gitattributes, true} | acc])
+  defp do_parse_options(["--skip-patterns" | rest], acc), do: do_parse_options(rest, [{:skip_patterns, true} | acc])
+  defp do_parse_options(["--keep-key" | rest], acc), do: do_parse_options(rest, [{:keep_key, true} | acc])
+  defp do_parse_options(["--password" | rest], acc), do: do_parse_options(rest, [{:password, true} | acc])
+  defp do_parse_options(["--no-password" | rest], acc), do: do_parse_options(rest, [{:password, false} | acc])
+  defp do_parse_options(["--password-stdin" | rest], acc), do: add_password_source(:stdin, acc, rest)
+  defp do_parse_options(["--password-file", path | rest], acc) when is_binary(path), do: add_password_source({:file, path}, acc, rest)
+  defp do_parse_options(["--password-fd", fd | rest], acc), do: parse_password_fd(fd, acc, rest)
+  defp do_parse_options(["--no-confirm" | rest], acc), do: do_parse_options(rest, [{:password_no_confirm, true} | acc])
+
+  defp do_parse_options([<<"--password-file=", path::binary>> | rest], acc),
+    do: add_password_source({:file, path}, acc, rest)
+
+  defp do_parse_options([<<"--password-fd=", value::binary>> | rest], acc),
+    do: parse_password_fd(value, acc, rest)
+
+  defp do_parse_options([unknown | _rest], _acc) when unknown in ["--password-file", "--password-fd"] do
+    {:error, "Missing value for #{unknown}"}
+  end
+
+  defp do_parse_options([_arg | rest], acc), do: do_parse_options(rest, acc)
+
+  defp parse_password_fd(value, acc, rest) do
+    with {fd, ""} <- Integer.parse(value),
+         true <- fd >= 0 do
+      add_password_source({:fd, fd}, acc, rest)
+    else
+      _ -> {:error, "Invalid value for --password-fd: #{value}"}
+    end
+  end
+
+  defp add_password_source(source, acc, rest) do
+    if Keyword.has_key?(acc, :password_source) do
+      {:error, "Multiple password sources specified. Choose only one of --password-stdin, --password-file, or --password-fd."}
+    else
+      do_parse_options(rest, [{:password_source, source} | acc])
+    end
+  end
+
+  defp parse_commit_options(args) do
+    with {:ok, message_opts, rest} <- extract_commit_message(args, []) do
+      case parse_options(rest) do
+        {:ok, opts} -> {:ok, message_opts ++ opts}
+        {:error, msg} -> {:error, msg}
+      end
+    end
+  end
+
+  defp extract_commit_message(["-m", message | rest], acc),
+    do: extract_commit_message(rest, [{:message, message} | acc])
+
+  defp extract_commit_message(["--message", message | rest], acc),
+    do: extract_commit_message(rest, [{:message, message} | acc])
+
+  defp extract_commit_message([<<"--message=", message::binary>> | rest], acc),
+    do: extract_commit_message(rest, [{:message, message} | acc])
+
+  defp extract_commit_message(args, acc), do: {:ok, Enum.reverse(acc), args}
 
   # ============================================================================
   # Command Execution
@@ -159,10 +221,11 @@ defmodule GitFoil.CLI do
 
   defp execute({:clean, opts}) do
     file_path = Keyword.fetch!(opts, :file_path)
+    filter_opts = Keyword.delete(opts, :file_path)
 
     # Process clean filter: plaintext (stdin) → encrypted (stdout)
     # GitFilter.process handles all I/O directly
-    case GitFoil.Adapters.GitFilter.process(:clean, file_path) do
+    case GitFoil.Adapters.GitFilter.process(:clean, file_path, filter_opts) do
       {:ok, 0} -> {:ok, ""}
       {:error, exit_code} -> {:error, exit_code}
     end
@@ -170,10 +233,11 @@ defmodule GitFoil.CLI do
 
   defp execute({:smudge, opts}) do
     file_path = Keyword.fetch!(opts, :file_path)
+    filter_opts = Keyword.delete(opts, :file_path)
 
     # Process smudge filter: encrypted (stdin) → plaintext (stdout)
     # GitFilter.process handles all I/O directly
-    case GitFoil.Adapters.GitFilter.process(:smudge, file_path) do
+    case GitFoil.Adapters.GitFilter.process(:smudge, file_path, filter_opts) do
       {:ok, 0} -> {:ok, ""}
       {:error, exit_code} -> {:error, exit_code}
     end
@@ -241,6 +305,12 @@ defmodule GitFoil.CLI do
     System.halt(0)
   end
 
+  defp handle_result({:error, {exit_code, message}})
+       when is_integer(exit_code) and is_binary(message) do
+    IO.puts(:stderr, message)
+    System.halt(exit_code)
+  end
+
   defp handle_result({:error, message}) when is_binary(message) do
     IO.puts(:stderr, "Error: #{message}")
     IO.puts(:stderr, "\nRun 'git-foil help' for usage information.")
@@ -249,6 +319,20 @@ defmodule GitFoil.CLI do
 
   defp handle_result({:error, exit_code}) when is_integer(exit_code) do
     System.halt(exit_code)
+  end
+
+  defp setup_signal_handlers do
+    Enum.each([:sigint, :sigterm, :sigquit], &install_signal_handler/1)
+  end
+
+  defp install_signal_handler(signal) do
+    System.trap_signal(signal, fn ->
+      IO.puts(:stderr, "\nInterrupted")
+      System.halt(130)
+    end)
+  rescue
+    ArgumentError -> :ok
+    FunctionClauseError -> :ok
   end
 
   # ============================================================================
@@ -284,6 +368,12 @@ defmodule GitFoil.CLI do
         --force, -f                 Force overwrite (for init command)
         --skip-patterns             Skip pattern configuration during init
         --keep-key                  Preserve encryption key when unencrypting
+        --password                  Require password protection during init/rekey
+        --no-password               Disable password protection during init/rekey
+        --password-stdin            Read password from stdin (non-interactive)
+        --password-file <path>      Read password (and optional confirmation) from file
+        --password-fd <fd>          Read password from file descriptor
+        --no-confirm                Skip confirmation when providing password non-interactively
 
     GETTING STARTED:
 
@@ -330,10 +420,6 @@ defmodule GitFoil.CLI do
   - add-pattern <glob>  Add encryption pattern
   - list-patterns       List configured patterns
   - commit              Commit staged changes with guidance
-
-  Environment Variables
-  - GIT_FOIL_PASSWORD   Supply a password non-interactively (min 8 chars)
-  - GIT_FOIL_TTY        Path used as TTY for prompts (testing/automation)
 
   For more, see README.md (Setup, Non-interactive prompts).
   """

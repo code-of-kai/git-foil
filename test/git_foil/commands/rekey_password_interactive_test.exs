@@ -24,13 +24,16 @@ defmodule GitFoil.Commands.RekeyPasswordInteractiveTest do
       {:ok, keypair} = FileKeyStorage.generate_keypair()
       :ok = FileKeyStorage.store_keypair(keypair)
 
+      File.write!("tracked.txt", "data")
+      System.cmd("git", ["add", "tracked.txt"])
+
       # Fake TTY responses for password + confirm
       tty_path = Path.join(repo, "tty_rekey.txt")
       File.write!(tty_path, "AnotherPass9\nAnotherPass9\n")
       System.put_env("GIT_FOIL_TTY", tty_path)
 
       # Force new key and require password protection
-      {output, result} = capture_result(fn -> Rekey.run(force: true, password: true) end)
+      {output, {:ok, _message}} = capture_result(fn -> Rekey.run(force: true, password: true) end)
 
       # Regardless of repo file state, password prompt was shown and key replaced
       assert output =~ "Password requirements:"

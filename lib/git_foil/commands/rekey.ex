@@ -10,7 +10,7 @@ defmodule GitFoil.Commands.Rekey do
   """
 
   alias GitFoil.Adapters.{FileKeyStorage, PasswordProtectedKeyStorage}
-  alias GitFoil.CLI.PasswordPrompt
+  alias GitFoil.CLI.PasswordInput
   alias GitFoil.Core.{KeyManager, KeyMigration}
   alias GitFoil.Helpers.{FileEncryption, UIPrompts}
   alias GitFoil.Infrastructure.Terminal
@@ -144,10 +144,18 @@ defmodule GitFoil.Commands.Rekey do
       end
 
     if choice do
-      # Friendly requirements before prompting
-      IO.puts("")
-      UIPrompts.print_password_requirements()
-      prompt_password_and_init_key()
+      password_opts = password_prompt_opts(opts, confirm: true, min_length: 8)
+
+      case PasswordInput.new_password("New password for master key (min 8 chars): ", password_opts) do
+        {:ok, password} ->
+          case KeyManager.init_with_password(password) do
+            {:ok, _keypair} -> :ok
+            {:error, reason} -> {:error, "Failed to generate keypair: #{UIPrompts.format_error(reason)}"}
+          end
+
+        {:error, error} ->
+          {:error, error}
+      end
     else
       case KeyManager.init_without_password() do
         {:ok, _keypair} ->
@@ -158,33 +166,15 @@ defmodule GitFoil.Commands.Rekey do
       end
     end
   end
-  
-  # Re-prompts until a valid password is provided or the user cancels (Ctrl-C)
-  defp prompt_password_and_init_key do
-    case PasswordPrompt.get_password("New password for master key (min 8 chars): ", confirm: true) do
-      {:ok, password} ->
-        case KeyManager.init_with_password(password) do
-          {:ok, _keypair} -> :ok
-          {:error, reason} -> {:error, "Failed to generate keypair: #{UIPrompts.format_error(reason)}"}
-        end
 
-      {:error, :password_mismatch} ->
-        IO.puts("\nError: Passwords do not match. Please try again.\n")
-        prompt_password_and_init_key()
+  defp password_prompt_opts(opts, overrides) do
+    base = Keyword.take(opts, [:password_source, :password_no_confirm])
 
-      {:error, {:password_too_short, min}} ->
-        IO.puts("\nError: Password must be at least #{min} characters. Please try again.\n")
-        prompt_password_and_init_key()
-
-      {:error, :password_empty} ->
-        IO.puts("\nError: Password cannot be empty. Please try again.\n")
-        prompt_password_and_init_key()
-
-      {:error, reason} ->
-        {:error, "Password prompt failed: #{PasswordPrompt.format_error(reason)}"}
-    end
+    base
+    |> Keyword.merge(overrides, fn _key, _existing, override -> override end)
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
   end
-
+  
   # end grouped clauses
 
   defp notify_password_selection(true, source) do

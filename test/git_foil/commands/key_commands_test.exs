@@ -15,7 +15,6 @@ defmodule GitFoil.Commands.KeyCommandsTest do
 
     on_exit(fn ->
       File.rm_rf!(repo)
-      reset_env(["GIT_FOIL_PASSWORD"])
     end)
 
     {:ok, repo: repo}
@@ -27,8 +26,8 @@ defmodule GitFoil.Commands.KeyCommandsTest do
         {:ok, keypair} = FileKeyStorage.generate_keypair()
         :ok = FileKeyStorage.store_keypair(keypair)
 
-        with_env(%{"GIT_FOIL_PASSWORD" => @password}, fn ->
-          {output, {:ok, message}} = capture_result(fn -> EncryptKey.run() end)
+        with_password_source(@password, fn password_opts ->
+          {output, {:ok, message}} = capture_result(fn -> EncryptKey.run(password_opts) end)
 
           assert output =~ "Encrypting master key"
           assert message =~ "Master key encrypted with password."
@@ -44,8 +43,8 @@ defmodule GitFoil.Commands.KeyCommandsTest do
         {:ok, keypair} = PasswordProtectedKeyStorage.generate_keypair()
         :ok = PasswordProtectedKeyStorage.store_keypair_with_password(keypair, @password)
 
-        with_env(%{"GIT_FOIL_PASSWORD" => @password}, fn ->
-          {_output, {:ok, message}} = capture_result(fn -> EncryptKey.run() end)
+        with_password_source(@password, fn password_opts ->
+          {_output, {:ok, message}} = capture_result(fn -> EncryptKey.run(password_opts) end)
           assert message =~ "already password protected"
         end)
       end)
@@ -53,8 +52,8 @@ defmodule GitFoil.Commands.KeyCommandsTest do
 
     test "fails when GitFoil not initialized", %{repo: repo} do
       in_repo(repo, fn ->
-        with_env(%{"GIT_FOIL_PASSWORD" => @password}, fn ->
-          {_output, {:error, reason}} = capture_result(fn -> EncryptKey.run() end)
+        with_password_source(@password, fn password_opts ->
+          {_output, {:error, reason}} = capture_result(fn -> EncryptKey.run(password_opts) end)
           assert reason =~ "GitFoil not initialized"
         end)
       end)
@@ -64,8 +63,8 @@ defmodule GitFoil.Commands.KeyCommandsTest do
       dir = non_git_dir()
 
       File.cd!(dir, fn ->
-        with_env(%{"GIT_FOIL_PASSWORD" => @password}, fn ->
-          {_output, {:error, reason}} = capture_result(fn -> EncryptKey.run() end)
+        with_password_source(@password, fn password_opts ->
+          {_output, {:error, reason}} = capture_result(fn -> EncryptKey.run(password_opts) end)
           assert reason =~ "Not a Git repository"
         end)
       end)
@@ -80,8 +79,8 @@ defmodule GitFoil.Commands.KeyCommandsTest do
         {:ok, keypair} = PasswordProtectedKeyStorage.generate_keypair()
         :ok = PasswordProtectedKeyStorage.store_keypair_with_password(keypair, @password)
 
-        with_env(%{"GIT_FOIL_PASSWORD" => @password}, fn ->
-          {output, {:ok, message}} = capture_result(fn -> UnencryptKey.run() end)
+        with_password_source(@password, fn password_opts ->
+          {output, {:ok, message}} = capture_result(fn -> UnencryptKey.run(password_opts) end)
 
           assert output =~ "Removing password protection"
           assert message =~ "Master key stored without password."
@@ -97,8 +96,8 @@ defmodule GitFoil.Commands.KeyCommandsTest do
         {:ok, keypair} = FileKeyStorage.generate_keypair()
         :ok = FileKeyStorage.store_keypair(keypair)
 
-        with_env(%{"GIT_FOIL_PASSWORD" => @password}, fn ->
-          {_output, {:ok, message}} = capture_result(fn -> UnencryptKey.run() end)
+        with_password_source(@password, fn password_opts ->
+          {_output, {:ok, message}} = capture_result(fn -> UnencryptKey.run(password_opts) end)
           assert message =~ "already stored without password"
         end)
       end)
@@ -109,11 +108,29 @@ defmodule GitFoil.Commands.KeyCommandsTest do
         {:ok, keypair} = PasswordProtectedKeyStorage.generate_keypair()
         :ok = PasswordProtectedKeyStorage.store_keypair_with_password(keypair, @password)
 
-        with_env(%{"GIT_FOIL_PASSWORD" => "wrongpass"}, fn ->
-          {_output, {:error, reason}} = capture_result(fn -> UnencryptKey.run() end)
-          assert reason =~ "Invalid password"
+        with_password_source("wrongpass", fn password_opts ->
+          {_output, {:error, {exit_code, message}}} = capture_result(fn -> UnencryptKey.run(password_opts) end)
+          assert exit_code == 1
+          assert message =~ "Error: Invalid password."
           assert File.exists?(KeyMigration.encrypted_path())
         end)
+      end)
+    end
+
+    test "fails when password has trailing whitespace", %{repo: repo} do
+      in_repo(repo, fn ->
+        {:ok, keypair} = PasswordProtectedKeyStorage.generate_keypair()
+        :ok = PasswordProtectedKeyStorage.store_keypair_with_password(keypair, @password)
+
+        path = Path.join(repo, "spaced_password.txt")
+        File.write!(path, "cli-test-password \n")
+
+        opts = [password_source: {:file, path}]
+
+        {_output, {:error, {exit_code, message}}} = capture_result(fn -> UnencryptKey.run(opts) end)
+        assert exit_code == 2
+        assert message =~ "leading/trailing spaces"
+        assert File.exists?(KeyMigration.encrypted_path())
       end)
     end
 
@@ -121,8 +138,8 @@ defmodule GitFoil.Commands.KeyCommandsTest do
       dir = non_git_dir()
 
       File.cd!(dir, fn ->
-        with_env(%{"GIT_FOIL_PASSWORD" => @password}, fn ->
-          {_output, {:error, reason}} = capture_result(fn -> UnencryptKey.run() end)
+        with_password_source(@password, fn password_opts ->
+          {_output, {:error, reason}} = capture_result(fn -> UnencryptKey.run(password_opts) end)
           assert reason =~ "Not a Git repository"
         end)
       end)
@@ -149,25 +166,18 @@ defmodule GitFoil.Commands.KeyCommandsTest do
     {output, result}
   end
 
-  defp with_env(vars, fun) do
-    original =
-      vars
-      |> Map.new(fn {key, _val} -> {key, System.get_env(key)} end)
+  defp with_password_source(password, fun) do
+    base = System.tmp_dir!()
+    path = Path.join(base, "gitfoil_password_" <> Integer.to_string(System.unique_integer([:positive])))
+    File.write!(path, password <> "\n")
 
-    Enum.each(vars, fn {key, value} -> System.put_env(key, value) end)
+    opts = [password_source: {:file, path}, password_no_confirm: true]
 
     try do
-      fun.()
+      fun.(opts)
     after
-      Enum.each(original, fn
-        {key, nil} -> System.delete_env(key)
-        {key, value} -> System.put_env(key, value)
-      end)
+      File.rm_rf(path)
     end
-  end
-
-  defp reset_env(keys) do
-    Enum.each(keys, &System.delete_env/1)
   end
 
   defp in_repo(repo, fun), do: File.cd!(repo, fun)

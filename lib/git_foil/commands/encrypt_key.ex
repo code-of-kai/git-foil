@@ -6,7 +6,7 @@ defmodule GitFoil.Commands.EncryptKey do
   `.git/git_foil/master.key.enc` protected by a user-supplied password.
   """
 
-  alias GitFoil.CLI.PasswordPrompt
+  alias GitFoil.CLI.PasswordInput
   alias GitFoil.Core.{KeyManager, KeyMigration}
   alias GitFoil.Helpers.UIPrompts
 
@@ -27,7 +27,7 @@ defmodule GitFoil.Commands.EncryptKey do
                "Cannot encrypt key without a password. Use 'git-foil unencrypt key' to remove password instead."}
 
             _ ->
-              encrypt_plaintext_key()
+              encrypt_plaintext_key(opts)
           end
 
         :password_protected ->
@@ -38,37 +38,20 @@ defmodule GitFoil.Commands.EncryptKey do
     end
   end
 
-  defp encrypt_plaintext_key do
-    case System.get_env("GIT_FOIL_PASSWORD") do
-      # Interactive path: show requirements and reprompt until valid
-      nil ->
-        UIPrompts.print_password_requirements()
-        with {:ok, password} <- prompt_password_loop() do
-          do_encrypt_with(password)
-        end
+  defp encrypt_plaintext_key(opts) do
+    password_opts = [
+      password_source: Keyword.get(opts, :password_source, :tty),
+      password_no_confirm: Keyword.get(opts, :password_no_confirm, false),
+      min_length: 8,
+      confirm: true
+    ]
 
-      # Non-interactive path: respect env var and validate once
-      _env_val ->
-        case PasswordPrompt.get_password_with_fallback(
-               "New password for master key: ",
-               confirm: true
-             ) do
-          {:ok, password} -> do_encrypt_with(password)
+    case PasswordInput.new_password("New password for master key (min 8 chars): ", password_opts) do
+      {:ok, password} ->
+        do_encrypt_with(password)
 
-          {:error, {:password_too_short, min}} ->
-            {:error,
-             "Password must be at least #{min} characters. Set GIT_FOIL_PASSWORD to a longer value, or unset it to be prompted interactively."}
-
-          {:error, :password_empty} ->
-            {:error,
-             "Password cannot be empty. Set GIT_FOIL_PASSWORD to a non-empty value, or unset it to be prompted interactively."}
-
-          {:error, :password_mismatch} ->
-            {:error, "Passwords do not match. Re-run with a valid value or unset GIT_FOIL_PASSWORD."}
-
-          {:error, reason} ->
-            {:error, "Password prompt failed: #{PasswordPrompt.format_error(reason)}"}
-        end
+      {:error, {exit_code, message}} ->
+        {:error, {exit_code, message}}
     end
   end
 
@@ -82,29 +65,6 @@ defmodule GitFoil.Commands.EncryptKey do
 
       {:error, other} ->
         {:error, format_migration_error(other)}
-    end
-  end
-
-  # requirements banner now printed via UIPrompts.print_password_requirements/0
-
-  # Interactive loop for password entry with confirmation and clear errors
-  defp prompt_password_loop do
-    case PasswordPrompt.get_password(
-           "New password for master key (min 8 chars): ",
-           confirm: true
-         ) do
-      {:ok, password} -> {:ok, password}
-      {:error, :password_mismatch} ->
-        IO.puts("\nError: Passwords do not match. Please try again.\n")
-        prompt_password_loop()
-      {:error, {:password_too_short, min}} ->
-        IO.puts("\nError: Password must be at least #{min} characters. Please try again.\n")
-        prompt_password_loop()
-      {:error, :password_empty} ->
-        IO.puts("\nError: Password cannot be empty. Please try again.\n")
-        prompt_password_loop()
-      {:error, other} ->
-        {:error, "Password prompt failed: #{PasswordPrompt.format_error(other)}"}
     end
   end
 

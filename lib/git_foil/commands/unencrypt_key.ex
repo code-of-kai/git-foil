@@ -5,14 +5,14 @@ defmodule GitFoil.Commands.UnencryptKey do
   Converts `.git/git_foil/master.key.enc` back to plaintext storage.
   """
 
-  alias GitFoil.CLI.PasswordPrompt
+  alias GitFoil.CLI.PasswordInput
   alias GitFoil.Core.{KeyManager, KeyMigration}
   alias GitFoil.Helpers.UIPrompts
 
   @doc """
   Execute the command.
   """
-  def run(_opts \\ []) do
+  def run(opts \\ []) do
     IO.puts("🔓  Removing password protection from master key...")
     IO.puts("")
 
@@ -20,7 +20,7 @@ defmodule GitFoil.Commands.UnencryptKey do
          {:ok, status} <- ensure_initialized() do
       case status do
         :password_protected ->
-          unencrypt_key()
+          unencrypt_key(opts)
 
         :plaintext ->
           {:ok, already_plaintext_message()}
@@ -30,10 +30,15 @@ defmodule GitFoil.Commands.UnencryptKey do
     end
   end
 
-  defp unencrypt_key do
-    case PasswordPrompt.get_existing_password("Current master key password: ") do
-      {:ok, password} -> do_unencrypt_with(password)
-      {:error, reason} -> {:error, "Password prompt failed: #{PasswordPrompt.format_error(reason)}"}
+  defp unencrypt_key(opts) do
+    password_opts = [password_source: Keyword.get(opts, :password_source, :tty)]
+
+    case PasswordInput.existing_password("Current master key password: ", password_opts) do
+      {:ok, password} ->
+        do_unencrypt_with(password)
+
+      {:error, {exit_code, message}} ->
+        {:error, {exit_code, message}}
     end
   end
 
@@ -46,7 +51,7 @@ defmodule GitFoil.Commands.UnencryptKey do
         {:ok, already_plaintext_message()}
 
       {:error, :invalid_password} ->
-        {:error, "Invalid password. Master key remains encrypted."}
+        {:error, {1, "Error: Invalid password."}}
 
       {:error, other} ->
         {:error, format_migration_error(other)}

@@ -12,7 +12,7 @@ defmodule GitFoil.Commands.Init do
 
   alias GitFoil.Adapters.{FileKeyStorage, PasswordProtectedKeyStorage}
   alias GitFoil.Core.{KeyManager, KeyMigration}
-  alias GitFoil.CLI.PasswordPrompt
+  alias GitFoil.CLI.PasswordInput
   alias GitFoil.Helpers.{FileEncryption, UIPrompts}
   alias GitFoil.Infrastructure.{Git, Terminal}
 
@@ -363,10 +363,13 @@ Run continues so the working tree can be decrypted and made readable.
       IO.puts("")
       IO.puts("🔒  The master key will be encrypted with your password.")
 
-      case PasswordPrompt.get_password(
-             "Password for master key: ",
-             confirm: true
-           ) do
+      password_opts =
+        password_prompt_opts(opts,
+          confirm: true,
+          min_length: 8
+        )
+
+      case PasswordInput.new_password("Password for master key: ", password_opts) do
         {:ok, password} ->
           IO.puts("")
 
@@ -375,11 +378,8 @@ Run continues so the working tree can be decrypted and made readable.
            |> Keyword.put(:use_password, true)
            |> Keyword.put(:password_value, password)}
 
-        {:error, :password_mismatch} ->
-          {:error, "Passwords do not match. Please run the command again."}
-
-        {:error, reason} ->
-          {:error, "Password prompt failed: #{PasswordPrompt.format_error(reason)}"}
+        {:error, error} ->
+          {:error, error}
       end
     else
       {:ok, Keyword.put(opts, :use_password, false)}
@@ -428,18 +428,21 @@ Run continues so the working tree can be decrypted and made readable.
     IO.puts("")
     IO.puts("🔐  Encrypting existing master key with a password.")
 
-    case PasswordPrompt.get_password("Password for master key: ", confirm: true) do
+    password_opts =
+      password_prompt_opts(opts,
+        confirm: true,
+        min_length: 8
+      )
+
+    case PasswordInput.new_password("Password for master key: ", password_opts) do
       {:ok, password} ->
         {:ok,
          opts
          |> Keyword.put(:use_password, true)
          |> Keyword.put(:password_migration, {:encrypt, password})}
 
-      {:error, :password_mismatch} ->
-        {:error, "Passwords do not match. Please run the command again."}
-
-      {:error, reason} ->
-        {:error, "Password prompt failed: #{PasswordPrompt.format_error(reason)}"}
+      {:error, error} ->
+        {:error, error}
     end
   end
 
@@ -447,15 +450,17 @@ Run continues so the working tree can be decrypted and made readable.
     IO.puts("")
     IO.puts("🔓  Removing password protection from existing master key.")
 
-    case PasswordPrompt.get_password_with_fallback("Current master key password: ") do
+    password_opts = password_prompt_opts(opts)
+
+    case PasswordInput.existing_password("Current master key password: ", password_opts) do
       {:ok, password} ->
         {:ok,
          opts
          |> Keyword.put(:use_password, false)
          |> Keyword.put(:password_migration, {:unencrypt, password})}
 
-      {:error, reason} ->
-        {:error, "Password prompt failed: #{PasswordPrompt.format_error(reason)}"}
+      {:error, error} ->
+        {:error, error}
     end
   end
 
@@ -487,7 +492,7 @@ Run continues so the working tree can be decrypted and made readable.
             {:ok, cleanup_password_opts(opts)}
 
           {:error, :invalid_password} ->
-            {:error, "Invalid password. Master key remains encrypted."}
+            {:error, {1, "Error: Invalid password."}}
 
           {:error, reason} ->
             {:error, format_storage_change_error(reason)}
@@ -497,6 +502,14 @@ Run continues so the working tree can be decrypted and made readable.
 
   defp maybe_update_existing_key_storage(_key_action, opts) do
     {:ok, cleanup_password_opts(opts)}
+  end
+
+  defp password_prompt_opts(opts, overrides \\ []) do
+    base = Keyword.take(opts, [:password_source, :password_no_confirm])
+
+    base
+    |> Keyword.merge(overrides, fn _key, _existing, override -> override end)
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
   end
 
   defp cleanup_password_opts(opts, extra_keys \\ []) do
@@ -708,22 +721,23 @@ Run continues so the working tree can be decrypted and made readable.
 
     result =
       if use_password do
-        password =
+        password_result =
           case provided_password do
             nil ->
-              case PasswordPrompt.get_password(
-                     "Password for master key: ",
-                     confirm: true
-                   ) do
-                {:ok, pwd} -> {:ok, pwd}
-                {:error, reason} -> {:error, reason}
-              end
+              password_opts =
+                password_prompt_opts(opts,
+                  confirm: true,
+                  min_length: 8,
+                  show_requirements: false
+                )
+
+              PasswordInput.new_password("Password for master key: ", password_opts)
 
             value ->
               {:ok, value}
           end
 
-        case password do
+        case password_result do
           {:ok, pwd} ->
             case KeyManager.init_with_password(pwd) do
               {:ok, keypair} ->
@@ -733,11 +747,8 @@ Run continues so the working tree can be decrypted and made readable.
                 {:error, "Failed to initialize with password: #{UIPrompts.format_error(reason)}"}
             end
 
-          {:error, :password_mismatch} ->
-            {:error, "Passwords do not match. Please run the command again."}
-
-          {:error, reason} ->
-            {:error, "Password prompt failed: #{PasswordPrompt.format_error(reason)}"}
+          {:error, error} ->
+            {:error, error}
         end
       else
         # No password protection - use plaintext storage

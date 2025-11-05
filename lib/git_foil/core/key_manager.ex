@@ -29,7 +29,7 @@ defmodule GitFoil.Core.KeyManager do
 
   alias GitFoil.Adapters.{FileKeyStorage, PasswordProtectedKeyStorage}
   alias GitFoil.Core.Types.{Keypair, EncryptionKey}
-  alias GitFoil.CLI.PasswordPrompt
+  alias GitFoil.CLI.PasswordInput
 
   @process_key_master_key :gitfoil_cached_master_key
   @process_key_keypair :gitfoil_cached_keypair
@@ -94,17 +94,17 @@ defmodule GitFoil.Core.KeyManager do
     if not force_prompt do
       case get_cached_master_key() do
         {:ok, master_key} -> {:ok, master_key}
-        :error -> do_unlock_with_prompt()
+        :error -> do_unlock_with_prompt(opts)
       end
     else
-      do_unlock_with_prompt()
+      do_unlock_with_prompt(opts)
     end
   end
 
   @doc """
   Unlocks GitFoil with explicit password (no prompt).
 
-  Useful for testing and automation with environment variables.
+  Useful for testing and non-interactive automation.
 
   Returns `{:ok, master_key}` on success.
   """
@@ -236,10 +236,10 @@ defmodule GitFoil.Core.KeyManager do
   # ============================================================================
 
   # Performs the actual unlock with password prompt
-  defp do_unlock_with_prompt do
+  defp do_unlock_with_prompt(opts) do
     case initialization_status() do
       {:initialized, :password_protected} ->
-        prompt_and_unlock_password_protected()
+        prompt_and_unlock_password_protected(opts)
 
       {:initialized, :plaintext} ->
         unlock_without_password()
@@ -250,8 +250,10 @@ defmodule GitFoil.Core.KeyManager do
   end
 
   # Prompts for password and unlocks
-  defp prompt_and_unlock_password_protected do
-    case PasswordPrompt.get_password_with_fallback("GitFoil password: ") do
+  defp prompt_and_unlock_password_protected(opts) do
+    password_opts = Keyword.take(opts, [:password_source]) |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+
+    case PasswordInput.existing_password("GitFoil password: ", password_opts) do
       {:ok, password} ->
         case unlock_with_password(password) do
           {:ok, master_key} ->
@@ -264,8 +266,8 @@ defmodule GitFoil.Core.KeyManager do
             error
         end
 
-      {:error, reason} ->
-        {:error, {:password_prompt_failed, reason}}
+      {:error, error} ->
+        {:error, {:password_prompt_failed, error}}
     end
   end
 

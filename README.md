@@ -225,38 +225,39 @@ Each command creates a timestamped backup of the previous key file—copy it int
 
 ### Non-interactive prompts (CI/local automation)
 
-GitFoil supports two environment variables to make interactive flows deterministic:
+GitFoil reads passwords securely through CLI flags—no environment variables required:
 
-- `GIT_FOIL_PASSWORD`: Supplies a password for key operations without prompting.
-  - Used by `git-foil encrypt key`, `git-foil unencrypt key`, and some init/rekey flows.
-  - Must be at least 8 characters and non-empty. If invalid, commands return a clear error.
-  - Unset this var to be prompted interactively.
+- `--password-stdin` read from standard input (provide one line per prompt; add `--no-confirm` to skip confirmation)
+- `--password-file <path>` read from a protected file (first line password, second line confirmation unless `--no-confirm`)
+- `--password-fd <fd>` read from an already-open file descriptor (Unix only)
+- `--no-confirm` skip confirmation when you control the source content
 
-- `GIT_FOIL_TTY`: Path to a file that acts like a TTY for input.
-  - When set, password prompts read from this file (useful for tests and scripts).
-  - Example: write two lines for password and confirmation, then run the command.
+Passwords must not start or end with whitespace; invalid input causes exit code 2 with a clear error. Wrong passwords exit with code 1. Ctrl-C exits with code 130. Only the trailing newline is trimmed—internal spaces are preserved.
 
-Interactive flows print a short banner with password requirements (min 8 chars, visible input, Ctrl-C to cancel) and will re-prompt on invalid input.
+`GIT_FOIL_TTY` remains available for tests that need to simulate a TTY (`export GIT_FOIL_TTY=/path/to/scripted_input`).
 
-#### Automation examples
-
-Use an environment variable (non-interactive):
+Automation examples:
 
 ```bash
-export GIT_FOIL_PASSWORD='VeryStrongPass9'
-git-foil encrypt key
-unset GIT_FOIL_PASSWORD
+# Provide password via stdin (two lines for password + confirmation)
+printf 'VeryStrongPass9\nVeryStrongPass9\n' | git-foil encrypt key --password-stdin
+
+# Provide password from a file and skip confirmation
+chmod 600 ~/.gitfoil-pass
+echo 'VeryStrongPass9' > ~/.gitfoil-pass
+git-foil encrypt key --password-file ~/.gitfoil-pass --no-confirm
+
+# Read password from file descriptor 3
+exec 3< ~/.gitfoil-pass
+git-foil unencrypt key --password-fd 3
+exec 3<&-
 ```
 
-Feed prompts from a file (fake TTY):
+### Password security quick reference
 
-```bash
-printf "VeryStrongPass9\nVeryStrongPass9\n" > /tmp/tty_password
-export GIT_FOIL_TTY=/tmp/tty_password
-git-foil encrypt key
-unset GIT_FOIL_TTY
-rm -f /tmp/tty_password
-```
+- Use interactive prompts or the CLI password flags above; avoid environment variables and command-line arguments for secrets.
+- Keep password files out of version control and restrict permissions (`chmod 600`).
+- GitFoil exit codes: `0` success, `1` authentication failure, `2` invalid input/I/O error, `130` Ctrl-C.
 
 
 ---

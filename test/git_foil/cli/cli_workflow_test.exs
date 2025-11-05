@@ -49,10 +49,13 @@ defmodule GitFoil.CLIWorkflowTest do
     assert File.exists?(plaintext_key)
     refute File.exists?(encrypted_key)
 
-    password_env = [{"GIT_FOIL_PASSWORD", "cli-t0ggle-pass"} | base_env]
+    password_file = Path.join(repo, "cli_password.txt")
+    File.write!(password_file, "cli-t0ggle-pass\n")
+    password_args = ["--password-file", password_file, "--no-confirm"]
     before_files = File.ls!(Path.join(repo, ".git/git_foil"))
 
-    {encrypt_out, encrypt_status} = run_cli(escript, ["encrypt", "key"], repo, password_env)
+    {encrypt_out, encrypt_status} =
+      run_cli(escript, ["encrypt", "key" | password_args], repo, base_env)
     assert encrypt_status == 0, "encrypt key failed: #{encrypt_out}"
     assert File.exists?(encrypted_key)
     refute File.exists?(plaintext_key)
@@ -60,7 +63,8 @@ defmodule GitFoil.CLIWorkflowTest do
     after_encrypt_files = File.ls!(Path.join(repo, ".git/git_foil"))
     assert Enum.any?(after_encrypt_files -- before_files, &String.starts_with?(&1, "master.key.backup."))
 
-    {unencrypt_out, unencrypt_status} = run_cli(escript, ["unencrypt", "key"], repo, password_env)
+    {unencrypt_out, unencrypt_status} =
+      run_cli(escript, ["unencrypt", "key" | password_args], repo, base_env)
     assert unencrypt_status == 0, "unencrypt key failed: #{unencrypt_out}"
     assert File.exists?(plaintext_key)
     refute File.exists?(encrypted_key)

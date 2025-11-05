@@ -26,7 +26,7 @@ defmodule GitFoil.Adapters.GitFilter do
   @behaviour GitFoil.Ports.Filter
 
   alias GitFoil.Core.{EncryptionEngine, KeyManager}
-  alias GitFoil.CLI.PasswordPrompt
+  alias GitFoil.CLI.PasswordInput
 
   alias GitFoil.Adapters.{
     OpenSSLCrypto,
@@ -39,6 +39,8 @@ defmodule GitFoil.Adapters.GitFilter do
 
   require Logger
 
+  @password_opts_key :gitfoil_password_options
+
   @impl true
   def clean(plaintext, file_path) when is_binary(plaintext) and is_binary(file_path) do
     with {:ok, master_key} <- load_master_key(),
@@ -46,6 +48,9 @@ defmodule GitFoil.Adapters.GitFilter do
          serialized <- EncryptionEngine.serialize(encrypted_blob) do
       {:ok, serialized}
     else
+      {:error, {exit_code, message}} ->
+        {:error, {exit_code, message}}
+
       {:error, :not_initialized} ->
         {:error, "GitFoil not initialized - run 'git-foil init' first"}
 
@@ -65,12 +70,13 @@ defmodule GitFoil.Adapters.GitFilter do
          {:ok, plaintext} <- decrypt_content(blob, master_key, file_path) do
       {:ok, plaintext}
     else
+      {:error, {exit_code, message}} ->
+        {:error, {exit_code, message}}
+
       {:error, :not_initialized} ->
         {:error, "GitFoil not initialized - run 'git-foil init' first"}
 
       {:error, :invalid_blob_format} ->
-        # Not a GitFoil encrypted file - return as-is
-        # This handles files that were committed before encryption was enabled
         {:ok, encrypted}
 
       {:error, %UndefinedFunctionError{module: module}} ->
@@ -84,12 +90,14 @@ defmodule GitFoil.Adapters.GitFilter do
 
   # Loads master encryption key from storage (plaintext or password-protected)
   defp load_master_key do
+    password_opts = current_password_options()
+
     case KeyManager.unlock_without_password() do
       {:ok, master_key} ->
         {:ok, master_key}
 
       {:error, :password_required} ->
-        unlock_password_protected()
+        unlock_password_protected(password_opts)
 
       {:error, :not_initialized} ->
         {:error, :not_initialized}
@@ -101,43 +109,32 @@ defmodule GitFoil.Adapters.GitFilter do
 
   # Unlocks password-protected storage
   # First checks if already unlocked (cached), then prompts if needed
-  defp unlock_password_protected do
+  defp unlock_password_protected(password_opts) do
     case KeyManager.get_master_key() do
       {:ok, master_key} ->
         # Already unlocked in this process
         {:ok, master_key}
 
       {:error, :locked} ->
-        # Not yet unlocked - try environment variable first, then prompt
-        case System.get_env("GIT_FOIL_PASSWORD") do
-          nil ->
-            # No env var - prompt for password
-            prompt_for_password()
-
-          password when is_binary(password) ->
-            # Use password from environment
-            KeyManager.unlock_with_password(password)
-        end
+        request_password_unlock(password_opts)
     end
   end
-
-  # Prompts user for password to unlock key
-  defp prompt_for_password do
-    case PasswordPrompt.get_password("GitFoil password: ") do
+  defp request_password_unlock(password_opts) do
+    case PasswordInput.existing_password("GitFoil password: ", password_opts) do
       {:ok, password} ->
         case KeyManager.unlock_with_password(password) do
           {:ok, master_key} ->
             {:ok, master_key}
 
           {:error, :invalid_password} ->
-            {:error, "Invalid password. Run 'git-foil init' if you've lost your password."}
+            {:error, {1, "Error: Invalid password."}}
 
           {:error, reason} ->
-            {:error, "Failed to unlock: #{inspect(reason)}"}
+            {:error, {2, "Failed to unlock: #{format_error(reason)}"}}
         end
 
-      {:error, reason} ->
-        {:error, "Password prompt failed: #{PasswordPrompt.format_error(reason)}"}
+      {:error, {exit_code, message}} ->
+        {:error, {exit_code, message}}
     end
   end
 
@@ -201,6 +198,33 @@ defmodule GitFoil.Adapters.GitFilter do
     end
   end
 
+  defp with_password_options(opts, fun) when is_function(fun, 0) do
+    password_opts =
+      opts
+      |> Keyword.take([:password_source])
+      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+
+    previous = Process.get(@password_opts_key, :undefined)
+
+    Process.put(@password_opts_key, password_opts)
+
+    try do
+      fun.()
+    after
+      case previous do
+        :undefined -> Process.delete(@password_opts_key)
+        value -> Process.put(@password_opts_key, value)
+      end
+    end
+  end
+
+  defp current_password_options do
+    case Process.get(@password_opts_key) do
+      nil -> []
+      value -> value
+    end
+  end
+
   @doc """
   Processes a filter operation (clean or smudge) with proper I/O handling.
 
@@ -237,21 +261,25 @@ defmodule GitFoil.Adapters.GitFilter do
           {:ok, ""}
 
         binary when is_binary(binary) ->
-          case operation do
-            :clean -> clean(binary, file_path)
-            :smudge -> smudge(binary, file_path)
-          end
+          with_password_options(opts, fn ->
+            case operation do
+              :clean -> clean(binary, file_path)
+              :smudge -> smudge(binary, file_path)
+            end
+          end)
       end
 
     case result do
       {:ok, output} ->
-        # Write encrypted/decrypted output to stdout
         IO.binwrite(output_device, output)
         {:ok, 0}
 
+      {:error, {exit_code, message}} when is_integer(exit_code) and is_binary(message) ->
+        IO.puts(:stderr, message)
+        {:error, exit_code}
+
       {:error, reason} ->
-        # Log error to stderr, return empty output to Git
-        IO.puts(:stderr, "GitFoil #{operation} error: #{reason}")
+        IO.puts(:stderr, "GitFoil #{operation} error: #{format_error(reason)}")
         {:error, 1}
     end
   end

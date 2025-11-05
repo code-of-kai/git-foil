@@ -13,7 +13,6 @@ defmodule GitFoil.Commands.EncryptKeyInteractiveTest do
 
     on_exit(fn ->
       File.rm_rf!(repo)
-      System.delete_env("GIT_FOIL_PASSWORD")
       System.delete_env("GIT_FOIL_TTY")
     end)
 
@@ -58,4 +57,3 @@ defmodule GitFoil.Commands.EncryptKeyInteractiveTest do
     {output, result}
   end
 end
-
