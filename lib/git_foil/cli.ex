@@ -122,6 +122,7 @@ defmodule GitFoil.CLI do
       "--force", acc -> [{:force, true} | acc]
       "-f", acc -> [{:force, true} | acc]
       "--skip-gitattributes", acc -> [{:skip_gitattributes, true} | acc]
+      "--skip-patterns", acc -> [{:skip_patterns, true} | acc]
       "--keep-key", acc -> [{:keep_key, true} | acc]
       "--password", acc -> [{:password, true} | acc]
       "--no-password", acc -> [{:password, false} | acc]
