@@ -289,6 +289,8 @@ defmodule GitFoil.Commands.Unencrypt do
                 String.contains?(line, "filter=gitveil") or
                 String.contains?(line, "GitFoil") or
                 String.trim(line) == ".gitattributes -filter" or
+                String.trim(line) == ".gitignore -filter" or
+                String.trim(line) == "**/.gitignore -filter" or
                 String.trim(line) == ".DS_Store -filter" or
                 String.trim(line) == "Thumbs.db -filter" or
                 String.trim(line) == "desktop.ini -filter"

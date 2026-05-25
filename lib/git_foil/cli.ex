@@ -31,6 +31,7 @@ defmodule GitFoil.CLI do
 
   alias GitFoil.Commands.{
     Commit,
+    Doctor,
     Encrypt,
     EncryptKey,
     Init,
@@ -123,6 +124,8 @@ defmodule GitFoil.CLI do
   defp parse_args(["unencrypt" | rest]), do: with_parsed_options(rest, &{:unencrypt, &1})
 
   defp parse_args(["rekey" | rest]), do: with_parsed_options(rest, &{:rekey, &1})
+
+  defp parse_args(["doctor" | rest]), do: with_parsed_options(rest, &{:doctor, &1})
 
   defp parse_args(args), do: {:error, "Unknown command: #{Enum.join(args, " ")}"}
 
@@ -289,6 +292,10 @@ defmodule GitFoil.CLI do
     Rekey.run(opts)
   end
 
+  defp execute({:doctor, opts}) do
+    Doctor.run(opts)
+  end
+
   defp execute({:error, message}) do
     {:error, message}
   end
@@ -357,6 +364,7 @@ defmodule GitFoil.CLI do
         unencrypt                   Remove all GitFoil encryption (decrypt all files)
         unencrypt key               Store master key without password
         rekey                       Rekey repository (generate new keys or refresh with existing)
+        doctor                      Diagnose common GitFoil misconfigurations
         commit                      Commit .gitattributes changes
         version                     Show version information
         help                        Show this help message

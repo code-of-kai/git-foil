@@ -184,7 +184,8 @@ defmodule GitFoil.Commands.Init do
     {:ok, :decided_later}
   end
 
-  defp build_gitattributes_content(patterns) do
+  # Public for testing — see test/git_foil/commands/gitattributes_exclusions_test.exs
+  def build_gitattributes_content(patterns) do
     header = "# GitFoil - Quantum-resistant Git encryption\n"
     pattern_lines = Enum.join(patterns, "\n")
     # Exclusions must not be encrypted
@@ -194,6 +195,8 @@ defmodule GitFoil.Commands.Init do
     exclusions = """
 
     .gitattributes -filter
+    .gitignore -filter
+    **/.gitignore -filter
     .DS_Store -filter
     Thumbs.db -filter
     desktop.ini -filter

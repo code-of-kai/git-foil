@@ -79,7 +79,7 @@ defmodule GitFoil.Commands.Pattern do
 
       {:error, :enoent} ->
         # Create new .gitattributes
-        content = "# GitFoil - Quantum-resistant Git encryption\n" <> full_pattern <> "\n.gitattributes -filter\n"
+        content = "# GitFoil - Quantum-resistant Git encryption\n" <> full_pattern <> "\n.gitattributes -filter\n.gitignore -filter\n**/.gitignore -filter\n"
 
         case File.write(".gitattributes", content) do
           :ok ->
@@ -253,7 +253,7 @@ defmodule GitFoil.Commands.Pattern do
 
       false ->
         # Create new file
-        full_content = "# GitFoil - Quantum-resistant Git encryption\n" <> content <> ".gitattributes -filter\n"
+        full_content = "# GitFoil - Quantum-resistant Git encryption\n" <> content <> ".gitattributes -filter\n.gitignore -filter\n**/.gitignore -filter\n"
         write_gitattributes_with_message(full_content, preset, :created)
     end
   end
@@ -307,7 +307,7 @@ defmodule GitFoil.Commands.Pattern do
           end
 
         false ->
-          full_content = "# GitFoil - Quantum-resistant Git encryption\n" <> content <> ".gitattributes -filter\n"
+          full_content = "# GitFoil - Quantum-resistant Git encryption\n" <> content <> ".gitattributes -filter\n.gitignore -filter\n**/.gitignore -filter\n"
           write_gitattributes(full_content, "Added #{length(patterns)} custom pattern(s)")
       end
     end
