@@ -79,7 +79,11 @@ defmodule GitFoil.MixProject do
   defp deps do
     [
       # Post-quantum cryptography
-      {:pqclean, "~> 0.0.3"},
+      # Pinned to git ref instead of Hex: the Hex tarball ships a 410KB
+      # metadata.config that exceeds Hex 2.4.x's per-file size limit during
+      # mix deps.get, breaking `brew reinstall git-foil`. The GitHub tag
+      # contains the same source without the oversized metadata file.
+      {:pqclean, github: "potatosalad/erlang-pqclean", tag: "0.0.3"},
 
       # Rust NIF for Ascon-128a
       {:rustler, "~> 0.34.0"},
