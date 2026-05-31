@@ -49,7 +49,17 @@ defmodule GitFoil.Infrastructure.FilterConfig do
 
   @doc """
   Whether the long-running filter process is usable in the current execution
-  mode. False under `mix run` (source/dev), true for the installed escript.
+  mode. True ONLY when running as the installed escript; false for every
+  `mix run` invocation regardless of `MIX_ENV`.
+
+  A `mix run` from a source checkout — at ANY `MIX_ENV`, including `:prod` —
+  emits compiler/startup chatter on stdout and cannot serve as the pkt-line
+  wire. The previous gate keyed off `Mix.env in [:dev, :test]`, so a
+  `MIX_ENV=prod mix run` slipped through and would write `filter.gitfoil.process`,
+  which git >= 2.11 prefers and does NOT fall back from on handshake failure —
+  a repo-bricking path. The discriminator is simply *is Mix loaded* (any mix
+  invocation loads it; the `escript.build` output does not bundle it), made
+  env-agnostic below.
   """
   @spec process_supported?() :: boolean()
   def process_supported? do
@@ -85,9 +95,15 @@ defmodule GitFoil.Infrastructure.FilterConfig do
     end
   end
 
+  # Source/mix-run detection, MIX_ENV-independent. If the Mix application is
+  # loaded (every `mix run`/`mix test`/`iex -S mix` loads it; the installed
+  # escript does not bundle it) AND we are sitting in a source tree (mix.exs
+  # present), we are running from source via a mix shim and must NOT advertise
+  # the process filter. Note: this deliberately matches ALL envs (:dev, :test,
+  # AND :prod) — `MIX_ENV=prod mix run` is still a mix run with polluted stdout.
   defp running_from_source?(project_root) do
     case {maybe_mix_env(), File.exists?(Path.join(project_root, "mix.exs"))} do
-      {{:ok, env}, true} when env in [:dev, :test] -> true
+      {{:ok, _env}, true} -> true
       _ -> false
     end
   end

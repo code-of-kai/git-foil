@@ -102,11 +102,19 @@ defmodule GitFoil.Adapters.PktLine do
   - `{:data, payload}` for a normal data packet (payload has its trailing
     newline preserved, if any — the caller decides whether to strip it)
   - `:flush` for a flush packet (`0000`)
+  - `:delim` for a delimiter packet (`0001`)
+  - `:response_end` for a response-end packet (`0002`)
   - `:eof` when the stream is closed at a packet boundary
   - `{:error, reason}` on a malformed prefix or truncated packet
+
+  `:delim` and `:response_end` are protocol-v2 section markers (ls-refs/fetch,
+  stateless-rpc). They never occur in the long-running filter protocol, which
+  delimits exclusively with flush packets. They are decoded as *distinct*
+  values rather than coerced to `:flush` so that callers fail fast on a
+  desynchronised or malformed stream instead of silently truncating a section.
   """
   @spec read_packet(IO.device()) ::
-          {:data, binary()} | :flush | :eof | {:error, term()}
+          {:data, binary()} | :flush | :delim | :response_end | :eof | {:error, term()}
   def read_packet(device) do
     case read_exactly(device, 4) do
       :eof ->
@@ -127,10 +135,13 @@ defmodule GitFoil.Adapters.PktLine do
     end
   end
 
-  # 0000 flush, 0001 delim, 0002 response-end. We only expect flush in the
-  # filter protocol; treat the other control packets as flush-equivalent
-  # boundaries defensively.
-  defp decode_length(_device, len) when len in [0, 1, 2], do: :flush
+  # Control packets: 0000 flush, 0001 delim, 0002 response-end. Decoded as
+  # distinct values — the filter protocol only ever uses flush, so delim and
+  # response-end signal a desynchronised/malformed stream and must surface as
+  # errors upstream rather than be coerced into a flush boundary.
+  defp decode_length(_device, 0), do: :flush
+  defp decode_length(_device, 1), do: :delim
+  defp decode_length(_device, 2), do: :response_end
 
   defp decode_length(_device, len) when len < 4 or len > 65520 do
     {:error, {:invalid_pkt_length, len}}
@@ -170,6 +181,12 @@ defmodule GitFoil.Adapters.PktLine do
 
       :eof ->
         {:error, :unexpected_eof_before_flush}
+
+      control when control in [:delim, :response_end] ->
+        # A protocol-v2 section marker has no meaning in the filter protocol.
+        # Fail fast instead of treating it as a flush (which would silently
+        # truncate this section and desynchronise the session).
+        {:error, {:unexpected_control_packet, control}}
 
       {:error, reason} ->
         {:error, reason}

@@ -74,7 +74,11 @@ defmodule GitFoil.Adapters.GitFilterProcess do
     # which the historical race is eliminated.
     case RustlerLoader.force_load_nifs() do
       :ok ->
-        GitFilter.put_password_options(filter_password_opts(opts))
+        # stdin/stdout ARE the pkt-line wire here, so password unlock must
+        # never prompt on them. Mark the session non-interactive: a locked,
+        # password-protected repo with no off-wire password source fails
+        # cleanly (status=error + stderr) instead of corrupting the protocol.
+        GitFilter.put_password_options([{:non_interactive, true} | filter_password_opts(opts)])
 
         with :ok <- handshake(in_dev, out_dev),
              :ok <- negotiate_capabilities(in_dev, out_dev) do

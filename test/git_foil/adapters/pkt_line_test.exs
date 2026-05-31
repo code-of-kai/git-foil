@@ -98,6 +98,37 @@ defmodule GitFoil.Adapters.PktLineTest do
       assert {:ok, payloads} = PktLine.read_until_flush(device)
       assert IO.iodata_to_binary(payloads) == content
     end
+
+    test "decodes delim (0001) as a distinct :delim, NOT :flush" do
+      {:ok, device} = StringIO.open("0001")
+      :io.setopts(device, [:binary, encoding: :latin1])
+      assert PktLine.read_packet(device) == :delim
+    end
+
+    test "decodes response-end (0002) as a distinct :response_end, NOT :flush" do
+      {:ok, device} = StringIO.open("0002")
+      :io.setopts(device, [:binary, encoding: :latin1])
+      assert PktLine.read_packet(device) == :response_end
+    end
+  end
+
+  describe "read_until_flush/1 control-packet handling (anti-truncation)" do
+    test "a delim packet mid-section is a hard error, not a silent section end" do
+      # A real data packet ("0006a\n"), then a delim (0001) where the filter
+      # protocol only ever expects flush. Coercing delim to flush would
+      # silently truncate after one payload; we must fail fast instead.
+      {:ok, device} = StringIO.open("0006a\n0001")
+      :io.setopts(device, [:binary, encoding: :latin1])
+      assert {:error, {:unexpected_control_packet, :delim}} =
+               PktLine.read_until_flush(device)
+    end
+
+    test "a response-end packet mid-section is a hard error" do
+      {:ok, device} = StringIO.open("0006a\n0002")
+      :io.setopts(device, [:binary, encoding: :latin1])
+      assert {:error, {:unexpected_control_packet, :response_end}} =
+               PktLine.read_until_flush(device)
+    end
   end
 
   # Deterministic pseudo-random bytes (no Date/random dependency).

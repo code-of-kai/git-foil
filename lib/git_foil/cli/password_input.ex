@@ -66,12 +66,34 @@ defmodule GitFoil.CLI.PasswordInput do
   Options:
     * `:password_source` – `:tty`, `:stdin`, `{:file, path}`, `{:fd, fd}`
     * `:allow_empty` – allow empty strings (default: true)
+    * `:non_interactive` – when true, refuse any source that would read or write
+      the process's own stdin/stdout (`:tty`, `:stdin`). Used by the long-running
+      filter process, where stdin/stdout ARE the Git pkt-line wire: prompting
+      there would inject prompt text into the protocol stream and consume
+      protocol bytes as the "password", desynchronising the session. With this
+      flag such sources hard-fail with a clear error instead of corrupting the
+      wire. Off-wire sources (`{:file, _}`, `{:fd, _}` with a non-stdin fd)
+      remain allowed.
   """
   @spec existing_password(String.t(), keyword()) :: {:ok, String.t()} | error()
   def existing_password(prompt, opts \\ []) do
     source = Keyword.get(opts, :password_source, :tty)
     allow_empty = Keyword.get(opts, :allow_empty, true)
+    non_interactive = Keyword.get(opts, :non_interactive, false)
 
+    if non_interactive and source in [:tty, :stdin] do
+      {:error,
+       {1,
+        "GitFoil: repository key is password-protected and locked, but the " <>
+          "filter process cannot prompt for a password — its stdin/stdout are " <>
+          "the Git protocol stream. Provide a non-interactive password source " <>
+          "(--password-file / --password-fd) so Git operations can proceed."}}
+    else
+      do_existing_password(prompt, source, allow_empty)
+    end
+  end
+
+  defp do_existing_password(prompt, source, allow_empty) do
     prompt_opts =
       [
         source: source,
