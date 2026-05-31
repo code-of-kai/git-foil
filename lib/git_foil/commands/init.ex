@@ -774,16 +774,29 @@ Run continues so the working tree can be decrypted and made readable.
     result
   end
 
+  # The git filter configuration GitFoil writes into a repository.
+  #
+  # We configure BOTH transports on purpose:
+  #
+  #   * filter.gitfoil.process  — git >= 2.11 prefers this single long-running
+  #     process (no per-file BEAM boot, no concurrent-dlopen race).
+  #   * filter.gitfoil.clean/.smudge — the per-file fallback. Older git ignores
+  #     the unknown `.process` key and uses these; a repo not yet reconfigured
+  #     also keeps working on them. This is the *old-git* compatibility net.
+  #
+  # IMPORTANT (rollback): the `.process` key is NOT a rollback net. git >= 2.11
+  # invokes `.process` and does not fall back to clean/smudge if that process
+  # fails its handshake. So downgrading the binary to a build that cannot speak
+  # the protocol requires unsetting `.process` first (see scripts/gitfoil-rollback.sh).
+  # The transport is purely about how git delivers (content, pathname); the
+  # ciphertext is byte-identical across both, so switching between them never
+  # rewrites history or churns the working tree.
+  defp gitfoil_filters, do: GitFoil.Infrastructure.FilterConfig.entries()
+
   defp do_configure_filters(min_duration, repository) do
     start_time = System.monotonic_time(:millisecond)
 
-    executable_path = get_executable_path()
-
-    filters = [
-      {"filter.gitfoil.clean", "#{executable_path} clean %f"},
-      {"filter.gitfoil.smudge", "#{executable_path} smudge %f"},
-      {"filter.gitfoil.required", "true"}
-    ]
+    filters = gitfoil_filters()
 
     results =
       Enum.map(filters, fn {key, value} ->
@@ -815,14 +828,7 @@ Run continues so the working tree can be decrypted and made readable.
       terminal.with_spinner(
         "   Configuring Git filters for automatic encryption/decryption",
         fn ->
-          # Determine the correct path to git-foil executable
-          executable_path = get_executable_path()
-
-          filters = [
-            {"filter.gitfoil.clean", "#{executable_path} clean %f"},
-            {"filter.gitfoil.smudge", "#{executable_path} smudge %f"},
-            {"filter.gitfoil.required", "true"}
-          ]
+          filters = gitfoil_filters()
 
           results =
             Enum.map(filters, fn {key, value} ->
@@ -850,49 +856,6 @@ Run continues so the working tree can be decrypted and made readable.
   # ============================================================================
   # Executable Path Detection
   # ============================================================================
-
-  defp get_executable_path do
-    project_root = Path.expand("../../..", __DIR__)
-
-    cond do
-      running_from_source?(project_root) ->
-        "cd '#{project_root}' && mix run -e 'GitFoil.CLI.main(System.argv())' --"
-
-      exec_path = current_exec_path() ->
-        exec_path
-
-      executable = System.find_executable("git-foil") ->
-        executable
-
-      executable = System.find_executable("git-foil-dev") ->
-        executable
-
-      true ->
-        "git-foil"
-    end
-  end
-
-  defp running_from_source?(project_root) do
-    case {maybe_mix_env(), File.exists?(Path.join(project_root, "mix.exs"))} do
-      {{:ok, env}, true} when env in [:dev, :test] -> true
-      _ -> false
-    end
-  end
-
-  defp maybe_mix_env do
-    if Code.ensure_loaded?(Mix) and function_exported?(Mix, :env, 0) do
-      {:ok, Mix.env()}
-    else
-      :error
-    end
-  end
-
-  defp current_exec_path do
-    case System.fetch_env("_") do
-      {:ok, path} when path not in ["", "mix"] -> path
-      _ -> nil
-    end
-  end
 
   # ============================================================================
   # File Encryption

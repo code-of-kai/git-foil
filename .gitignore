@@ -49,3 +49,7 @@ test_secret.env
 # Local development scripts (machine-specific paths)
 bin/
 scripts/run-tests-local.sh
+
+# Local tooling artifacts (session locks, profiling/scan output)
+.claude/scheduled_tasks.lock
+.vet/

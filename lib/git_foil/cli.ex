@@ -92,6 +92,12 @@ defmodule GitFoil.CLI do
     end)
   end
 
+  defp parse_args(["filter-process" | rest]),
+    do: with_parsed_options(rest, &{:filter_process, &1})
+
+  defp parse_args(["upgrade-filters" | rest]),
+    do: with_parsed_options(rest, &{:upgrade_filters, &1})
+
   defp parse_args(["configure" | rest]), do: with_parsed_options(rest, &{:configure, &1})
 
   defp parse_args(["add-pattern", pattern | rest]) when is_binary(pattern) do
@@ -246,6 +252,20 @@ defmodule GitFoil.CLI do
     end
   end
 
+  defp execute({:filter_process, opts}) do
+    # Git long-running filter process. One persistent process serves every
+    # clean/smudge over the pkt-line protocol (filter.gitfoil.process), loading
+    # the crypto NIFs once at startup. Returns {:ok, 0} on clean end-of-session.
+    case GitFoil.Adapters.GitFilterProcess.run(opts) do
+      {:ok, 0} -> {:ok, ""}
+      {:error, exit_code} -> {:error, exit_code}
+    end
+  end
+
+  defp execute({:upgrade_filters, opts}) do
+    GitFoil.Commands.UpgradeFilters.run(opts)
+  end
+
   defp execute({:configure, _opts}) do
     Pattern.configure()
   end
@@ -364,6 +384,7 @@ defmodule GitFoil.CLI do
         unencrypt                   Remove all GitFoil encryption (decrypt all files)
         unencrypt key               Store master key without password
         rekey                       Rekey repository (generate new keys or refresh with existing)
+        upgrade-filters             Add the long-running filter process to an existing repo's config
         doctor                      Diagnose common GitFoil misconfigurations
         commit                      Commit .gitattributes changes
         version                     Show version information

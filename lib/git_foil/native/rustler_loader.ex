@@ -66,6 +66,53 @@ defmodule GitFoil.Native.RustlerLoader do
     end
   end
 
+  @doc """
+  Forces every crypto NIF module to load now, retrying on a transient failure.
+
+  Loading a Rustler module runs its `@on_load` (`:erlang.load_nif` -> `dlopen`).
+  Under the per-file clean/smudge model, many processes `dlopen` the same `.so`
+  concurrently and macOS dyld occasionally races, leaving the module unloaded
+  (its stubs raise `UndefinedFunctionError`). `Code.ensure_loaded/1` re-runs
+  `@on_load` on each call, so a short retry with backoff absorbs the transient
+  failure at the source.
+
+  In the long-running filter process this is called exactly once at startup,
+  where there is no concurrency at all — so it is the point that eliminates the
+  race rather than papering over it.
+  """
+  @spec force_load_nifs() :: :ok | {:error, term()}
+  def force_load_nifs do
+    _ = ensure_loaded()
+
+    @nif_libraries
+    |> Enum.reduce_while(:ok, fn %{module: module}, :ok ->
+      case load_with_retry(module, 5) do
+        :ok -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, {:nif_load_failed, module, reason}}}
+      end
+    end)
+  end
+
+  defp load_with_retry(module, attempts_left) do
+    case Code.ensure_loaded(module) do
+      {:module, ^module} ->
+        :ok
+
+      {:error, _reason} when attempts_left > 1 ->
+        # Drop the failed load so ensure_loaded re-runs @on_load next attempt.
+        _ = :code.purge(module)
+        _ = :code.delete(module)
+        Process.sleep(backoff_ms(attempts_left))
+        load_with_retry(module, attempts_left - 1)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # 6 -> retry; gives ~ 20, 40, 80, 160 ms backoffs across attempts.
+  defp backoff_ms(attempts_left), do: max(20, (6 - attempts_left) * 20)
+
   defp stage_application_layout do
     base_path =
       :filename.basedir(:user_cache, ~c"git_foil/runtime")

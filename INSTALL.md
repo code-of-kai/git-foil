@@ -34,6 +34,30 @@ git-foil init
 # Follow the interactive prompts to select which files to encrypt
 ```
 
+## Upgrading an existing repository to the long-running filter
+
+GitFoil >= 1.1.0 uses Git's long-running filter process
+(`filter.gitfoil.process`) so multi-file operations run a single persistent
+process instead of one per file — faster, and immune to the macOS concurrent
+NIF-load race. Fresh `git-foil init` configures it automatically. To add it to
+a repository that was initialized by an older GitFoil:
+
+```bash
+cd my-existing-repo
+git-foil upgrade-filters
+```
+
+This is transport-only: ciphertext is unchanged, so `git status` reports
+nothing modified and no re-encryption occurs.
+
+## Downgrading / rollback
+
+If you ever need to roll back to a GitFoil version that predates the process
+protocol, you **must** unset `filter.gitfoil.process` first — otherwise git
+will keep invoking a filter the old binary cannot speak. See
+[ROLLBACK.md](ROLLBACK.md) for the full procedure and `scripts/gitfoil-rollback.sh`
+to do it across many repositories.
+
 ## Uninstallation
 
 **Remove from system:**

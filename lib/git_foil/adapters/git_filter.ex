@@ -41,6 +41,24 @@ defmodule GitFoil.Adapters.GitFilter do
 
   @password_opts_key :gitfoil_password_options
 
+  # EX_TEMPFAIL from sysexits.h: "temporary failure, the user is invited to
+  # retry". A NIF that fails to load under the concurrent-dlopen race is
+  # transient — a plain re-run succeeds — so we exit with this distinct code
+  # and the bin wrapper retries on it (alongside 138/SIGBUS). This separates a
+  # transient load failure (retryable) from a genuine permanent one.
+  @ex_tempfail 75
+
+  @doc """
+  Sets password-source options for subsequent clean/smudge calls in this
+  process. Used by the long-running filter process to apply a session-wide
+  password source; per-invocation callers use the `opts` argument to `process/3`.
+  """
+  @spec put_password_options(keyword()) :: :ok
+  def put_password_options(opts) when is_list(opts) do
+    Process.put(@password_opts_key, opts)
+    :ok
+  end
+
   @impl true
   def clean(plaintext, file_path) when is_binary(plaintext) and is_binary(file_path) do
     with {:ok, master_key} <- load_master_key(),
@@ -55,8 +73,7 @@ defmodule GitFoil.Adapters.GitFilter do
         {:error, "GitFoil not initialized - run 'git-foil init' first"}
 
       {:error, %UndefinedFunctionError{module: module}} ->
-        {:error,
-         "Crypto library not loaded (#{inspect(module)}). Escripts cannot load NIFs. Use 'mix run' instead or create a proper release with 'mix release'."}
+        {:error, {@ex_tempfail, nif_load_failure_message(module)}}
 
       {:error, reason} ->
         {:error, "Encryption failed: #{format_error(reason)}"}
@@ -80,8 +97,7 @@ defmodule GitFoil.Adapters.GitFilter do
         {:ok, encrypted}
 
       {:error, %UndefinedFunctionError{module: module}} ->
-        {:error,
-         "Crypto library not loaded (#{inspect(module)}). Escripts cannot load NIFs. Use 'mix run' instead or create a proper release with 'mix release'."}
+        {:error, {@ex_tempfail, nif_load_failure_message(module)}}
 
       {:error, reason} ->
         {:error, "Decryption failed: #{format_error(reason)}"}
@@ -238,6 +254,12 @@ defmodule GitFoil.Adapters.GitFilter do
   """
   def process(operation, file_path, opts \\ [])
       when operation in [:clean, :smudge] and is_binary(file_path) do
+    # Per-file (legacy) path: force the NIFs to load now, with retry+backoff,
+    # to absorb the concurrent-dlopen race at its source before we touch crypto.
+    # The long-running filter.gitfoil.process avoids the race entirely; this is
+    # defense-in-depth for repos still using clean/smudge.
+    _ = GitFoil.Native.RustlerLoader.force_load_nifs()
+
     input_device = Keyword.get(opts, :input, :stdio)
     output_device = Keyword.get(opts, :output, :stdio)
 
@@ -282,6 +304,20 @@ defmodule GitFoil.Adapters.GitFilter do
         IO.puts(:stderr, "GitFoil #{operation} error: #{format_error(reason)}")
         {:error, 1}
     end
+  end
+
+  # Accurate message for a transient NIF-load failure. The installed escript
+  # CAN load NIFs (it does so on every non-racing call via GIT_FOIL_NIF_DIR);
+  # the failure mode is a concurrent-dlopen race on macOS dyld under rapid
+  # multi-file git operations. This is retryable — hence exit 75 (EX_TEMPFAIL),
+  # which the bin wrapper retries. The long-running filter process
+  # (filter.gitfoil.process) avoids the race entirely.
+  defp nif_load_failure_message(module) do
+    "Crypto library #{inspect(module)} failed to load (transient). This is " <>
+      "usually a concurrent dlopen race during rapid multi-file git operations; " <>
+      "retrying typically succeeds. Exit 75 (EX_TEMPFAIL) signals a retryable " <>
+      "failure. For a permanent fix, ensure filter.gitfoil.process is configured " <>
+      "(run 'git-foil init') so a single long-running process loads the NIFs once."
   end
 
   # Format errors in a user-friendly way
