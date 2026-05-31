@@ -49,6 +49,10 @@ defmodule GitFoil.CLI do
   Parses arguments and dispatches to appropriate command.
   """
   def main(args) do
+    # Defensive: guarantee logs never reach stdout even if the OTP application
+    # callback (which also does this, earlier) was skipped. stdout is data here
+    # — the encrypted blob for clean/smudge, the pkt-line wire for filter-process.
+    GitFoil.Logging.redirect_to_stderr()
     setup_signal_handlers()
     result = run(args)
     handle_result(result)

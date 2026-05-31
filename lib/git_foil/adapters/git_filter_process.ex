@@ -63,7 +63,7 @@ defmodule GitFoil.Adapters.GitFilterProcess do
     # escript the Erlang logger handler defaults to standard_io, so redirect it
     # to standard_error before anything can log (e.g. RustlerLoader on a NIF
     # failure). Our own protocol diagnostics go to :stderr explicitly.
-    redirect_logging_to_stderr()
+    GitFoil.Logging.redirect_to_stderr()
 
     # The protocol is binary; latin1 keeps bytes 1:1 with no transcoding.
     :io.setopts(in_dev, [:binary, encoding: :latin1])
@@ -315,15 +315,4 @@ defmodule GitFoil.Adapters.GitFilterProcess do
   # output device is not guaranteed to be stderr, and stdout is the wire.
   defp log_stderr(message), do: IO.puts(:stderr, message)
 
-  # Point the Erlang logger's default handler at standard_error so that any
-  # log emitted by a dependency (e.g. RustlerLoader) cannot land on stdout and
-  # corrupt the pkt-line stream. Best-effort: tolerate any handler shape.
-  defp redirect_logging_to_stderr do
-    _ = :logger.update_handler_config(:default, :config, %{type: :standard_error})
-    :ok
-  rescue
-    _ -> :ok
-  catch
-    _, _ -> :ok
-  end
 end
