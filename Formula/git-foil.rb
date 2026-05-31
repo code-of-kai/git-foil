@@ -1,8 +1,8 @@
 class GitFoil < Formula
   desc "Quantum-resistant Git encryption CLI"
   homepage "https://github.com/code-of-kai/git-foil"
-  url "https://github.com/code-of-kai/git-foil/archive/refs/tags/v1.0.2.tar.gz"
-  sha256 "9adba32031e8888c320f88b970f958abf252d6cbe857733e308f71fa1f44fe6b"
+  url "https://github.com/code-of-kai/git-foil/archive/refs/tags/v1.1.0.tar.gz"
+  sha256 "c2fd8635ae29a094ca7b2c0cbd948f34dabe579752a249eb18342c1a15284bad"
   license "MIT"
 
   depends_on "elixir"
@@ -49,6 +49,14 @@ class GitFoil < Formula
       # sees the same input.
 
       set -uo pipefail
+      # Run under the Erlang this CLI was *built* against -- not the user's
+      # ambient asdf/rbenv/kerl shims that happen to be first on PATH. The
+      # escript shebang is `#!/usr/bin/env escript`, so without this it picks
+      # up whatever escript leads PATH. If that runtime's NIF version is older
+      # than the build's, precompiled NIFs (pqclean/Kyber1024) fail their ABI
+      # check with {:bad_lib, ...} and `init`/`rekey` crash. Pinning to the
+      # brew erlang keeps build-erts == runtime-erts.
+      export PATH="#{Formula["erlang"].opt_bin}:$PATH"
       export GIT_FOIL_NIF_DIR="#{libexec}/priv/native"
       BIN="#{libexec}/git-foil"
 
