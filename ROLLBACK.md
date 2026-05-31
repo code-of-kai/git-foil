@@ -57,17 +57,35 @@ save you here.
    /path/to/git-foil/scripts/gitfoil-rollback.sh ~/Documents/Coding
    ```
 
-2. Relink/downgrade the git-foil binary (Homebrew keeps the old version in the
-   Cellar until `brew cleanup`):
+2. Activate the old git-foil binary. If both kegs are present in the Cellar
+   (the prebuilt 1.0.10 keg is kept as the rollback target), switch instantly
+   with a symlink swap — no rebuild, no download:
 
    ```bash
-   brew unlink git-foil && brew link --overwrite git-foil   # if multiple versions present
-   # or reinstall the pinned old formula from the tap
+   ls /opt/homebrew/Cellar/git-foil/            # confirm 1.0.10 is present
+   brew unlink git-foil
+   ln -sf /opt/homebrew/Cellar/git-foil/1.0.10/bin/git-foil /opt/homebrew/bin/git-foil
+   git-foil --version                           # -> GitFoil version 1.0.10
    ```
+
+   To go back to the new version:
+
+   ```bash
+   brew unlink git-foil && brew link --overwrite git-foil   # links the formula version (newest keg)
+   ```
+
+   (Modern Homebrew removed `brew switch`; `brew link` always links the
+   formula's current version, so the symlink swap above is how you pin an older
+   *installed* keg.) If the old keg is **not** in the Cellar, rebuild it from
+   the tag instead: point the tap formula at the `v1.0.10` tarball and
+   `HOMEBREW_NO_INSTALL_CLEANUP=1 brew reinstall code-of-kai/gitfoil/git-foil`.
 
 After step 1 the repo is back on clean/smudge, which any git-foil version
 handles. After step 2 you are fully on the old binary.
 
-> Tip: keep the new version installed until you've confirmed the new binary
-> handles your real repositories for a few days. Do not run `brew cleanup`
-> until then — that is what keeps 1.0.10 recoverable.
+> ⚠️ **`brew reinstall`/`brew upgrade` auto-run `brew cleanup git-foil`**, which
+> deletes old Cellar kegs (this is on by default and is how the 1.0.10 keg was
+> lost once during the 1.1.0 rollout). To keep 1.0.10 recoverable as a prebuilt
+> keg, **prefix brew commands with `HOMEBREW_NO_INSTALL_CLEANUP=1`** (or export
+> it in your shell profile). Never run a bare `brew cleanup` until you've
+> confirmed the new binary handles your real repositories.
