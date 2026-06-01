@@ -25,16 +25,21 @@ class GitFoil < Formula
     # unchanged source, so it never forced the recompile it was meant to.)
     system "mix", "compile"
 
-    libexec.install "priv"
+    # Build the escript while the source tree is still intact. `mix release`/
+    # `escript.build` resolve the NIF `.so` through `_build/prod/.../priv`, which
+    # is a SYMLINK to the source `priv/`. Relocating `priv` before this point
+    # (the old `libexec.install "priv"` step) dangles that symlink, the `.so`
+    # files disappear, and a recompile of RustlerLoader then fails to load the
+    # NIFs it `require`s. So escript.build must run before anything moves priv.
+    system "mix", "escript.build"
 
     # Defense-in-depth: also ship the compiled crates on disk so the wrapper's
-    # GIT_FOIL_NIF_DIR points at real `.so` files, not just a `.gitkeep`. The
-    # escript embeds them too (primary path); this covers the case where the
-    # per-user runtime extraction cache is unavailable.
+    # GIT_FOIL_NIF_DIR points at real `.so` files, not just a `.gitkeep` (the
+    # escript embeds them too, as the primary path). Copy before relocating
+    # anything so the `_build` priv symlink still resolves.
     (libexec/"priv/native").mkpath
     cp Dir["_build/prod/lib/git_foil/priv/native/*.so"], libexec/"priv/native"
 
-    system "mix", "escript.build"
     libexec.install "git-foil"
 
     (bin/"git-foil").write <<~EOS
