@@ -167,6 +167,14 @@ See the [installation guide](INSTALL.md) for source installation instructions.
 
 **Why not standalone binaries?** GitFoil uses native cryptographic libraries (Rust NIFs for AEGIS/Ascon/etc., C NIFs for post-quantum Kyber) that must be compiled for your specific system. Homebrew handles this automatically, giving you better performance than a pre-built binary would.
 
+### Upgrading & rolling back
+
+`brew upgrade git-foil` is all you need for new versions — encryption stays byte-for-byte compatible across releases, so existing repositories keep working untouched.
+
+To get the faster long-running filter (one persistent process instead of one per file) in a repository created before that feature existed, run `git-foil upgrade-filters` inside it. This only changes git config; it never rewrites history.
+
+> ⚠️ **Rolling back to an older git-foil is a one-way door once you've run `upgrade-filters`.** Modern git (≥ 2.11) prefers the long-running `filter.gitfoil.process` and will **not** fall back to the per-file filter if an older binary can't speak the protocol — so you must run `git config --unset filter.gitfoil.process` in each affected repo *before* downgrading, or git operations there will fail. See **[ROLLBACK.md](ROLLBACK.md)** for the full procedure (including `scripts/gitfoil-rollback.sh` for unsetting across many repos at once).
+
 ---
 
 ## Setup
