@@ -65,7 +65,8 @@ cross-compiled bundled runtime — is recorded here as an **optional follow-on**
 warranted only if we later ship prebuilt binaries to users who lack an Elixir
 toolchain. It is not required for the Homebrew path, which builds from source on
 the user's machine, and it is not currently a dependency (the `build_release.sh`
-script names it but nothing wires it in).
+script names it but nothing wires it in). The plain-release-vs-Burrito choice is
+decided separately in ADR-005.
 
 ## Rationale
 

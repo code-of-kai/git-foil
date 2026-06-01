@@ -36,6 +36,10 @@ that outlives any single conversation.
 | 002 | *(unused — number skipped; never renumber)* | — |
 | [003](ADR-003-six-layer-maximum-quantum-resistance.md) | Six-Layer Maximum Quantum Resistance | Proposed |
 | [004](ADR-004-otp-release-distribution-for-nifs.md) | Distribute git-foil as an OTP release, not an escript | Proposed (deferred behind the v1.1.3 escript fix) |
+| [005](ADR-005-plain-mix-release-not-burrito.md) | Use a plain mix release, not Burrito, for packaging | Proposed (refines 004) |
 
 > Note: ADR-002 has no file. The number is intentionally left as a gap rather
 > than reassigned, per the monotonic-numbering convention above.
+>
+> ADR-004 and ADR-005 form a pair: 004 chooses the release *format* over the
+> escript; 005 chooses the release *mechanism* (plain `mix release`) within it.
